@@ -18,7 +18,6 @@ import model
 import multiprocessing
 from sklearn.metrics import roc_auc_score
 
-
 CORES = multiprocessing.cpu_count() // 2
 
 
@@ -52,9 +51,9 @@ def BPR_train_original(dataset, recommend_model, loss_class, epoch, neg_k=1, w=N
             w.add_scalar(f'BPRLoss/BPR', cri, epoch * int(len(users) / world.config['bpr_batch_size']) + batch_i)
     aver_loss = aver_loss / total_batch
     return aver_loss
-    #return f"[BPR[aver loss{aver_loss:.3e}]"
-    
-    
+    # return f"[BPR[aver loss{aver_loss:.3e}]"
+
+
 def test_one_batch(X):
     sorted_items = X[0].numpy()
     groundTrue = X[1]
@@ -64,17 +63,17 @@ def test_one_batch(X):
         ret = utils.RecallPrecision_ATk(groundTrue, r, k)
         pre.append(ret['precision'])
         recall.append(ret['recall'])
-        ndcg.append(utils.NDCGatK_r(groundTrue,r,k))
-    return {'recall':np.array(recall), 
-            'precision':np.array(pre), 
-            'ndcg':np.array(ndcg)}
-        
-            
+        ndcg.append(utils.NDCGatK_r(groundTrue, r, k))
+    return {'recall': np.array(recall),
+            'precision': np.array(pre),
+            'ndcg': np.array(ndcg)}
+
+
 def Test(dataset, Recmodel, epoch, adj, w=None, multicore=0):
     u_batch_size = world.config['test_u_batch_size']
-    #dataset: utils.BasicDataset
+    # dataset: utils.BasicDataset
     testDict: dict = dataset.testDict
-    #Recmodel: model.LightGCN
+    # Recmodel: model.LightGCN
     # eval mode with no dropout
     Recmodel = Recmodel.eval()
     max_K = max(world.topks)
@@ -102,20 +101,20 @@ def Test(dataset, Recmodel, epoch, adj, w=None, multicore=0):
             batch_users_gpu = batch_users_gpu.to(world.device)
 
             rating = Recmodel.getUsersRating(adj, batch_users_gpu)
-            #rating = rating.cpu()
+            # rating = rating.cpu()
             exclude_index = []
             exclude_items = []
             for range_i, items in enumerate(allPos):
                 exclude_index.extend([range_i] * len(items))
                 exclude_items.extend(items)
-            rating[exclude_index, exclude_items] = -(1<<10)
+            rating[exclude_index, exclude_items] = -(1 << 10)
             _, rating_K = torch.topk(rating, k=max_K)
             rating = rating.cpu().numpy()
-            aucs = [ 
-                    utils.AUC(rating[i],
-                              dataset, 
-                              test_data) for i, test_data in enumerate(groundTrue)
-                ]
+            aucs = [
+                utils.AUC(rating[i],
+                          dataset,
+                          test_data) for i, test_data in enumerate(groundTrue)
+            ]
             auc_record.extend(aucs)
             del rating
             users_list.append(batch_users)
@@ -129,7 +128,7 @@ def Test(dataset, Recmodel, epoch, adj, w=None, multicore=0):
             pre_results = []
             for x in X:
                 pre_results.append(test_one_batch(x))
-        scale = float(u_batch_size/len(users))
+        scale = float(u_batch_size / len(users))
         for result in pre_results:
             results['recall'] += result['recall']
             results['precision'] += result['precision']

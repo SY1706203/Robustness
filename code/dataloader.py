@@ -20,43 +20,44 @@ import world
 from world import cprint
 from time import time
 
+
 class BasicDataset(Dataset):
     def __init__(self):
         print("init dataset")
-    
+
     @property
     def n_users(self):
         raise NotImplementedError
-    
+
     @property
     def m_items(self):
         raise NotImplementedError
-    
+
     @property
     def trainDataSize(self):
         raise NotImplementedError
-    
+
     @property
     def testDict(self):
         raise NotImplementedError
-    
+
     @property
     def allPos(self):
         raise NotImplementedError
-    
+
     def getUserItemFeedback(self, users, items):
         raise NotImplementedError
-    
+
     def getUserPosItems(self, users):
         raise NotImplementedError
-    
+
     def getUserNegItems(self, users):
         """
         not necessary for large dataset
         it's stupid to return all neg items in super large dataset
         """
         raise NotImplementedError
-    
+
     def getSparseGraph(self):
         """
         build a graph in torch.sparse.IntTensor.
@@ -67,50 +68,54 @@ class BasicDataset(Dataset):
         """
         raise NotImplementedError
 
+
 class LastFM(BasicDataset):
     """
     Dataset type for pytorch \n
     Incldue graph information
     LastFM dataset
     """
+
     def __init__(self, path="../data/lastfm"):
         # train or test
         cprint("loading [last fm]")
-        self.mode_dict = {'train':0, "test":1}
-        self.mode    = self.mode_dict['train']
+        self.mode_dict = {'train': 0, "test": 1}
+        self.mode = self.mode_dict['train']
         # self.n_users = 1892
         # self.m_items = 4489
         trainData = pd.read_table(join(path, 'data1.txt'), header=None)
         # print(trainData.head())
-        testData  = pd.read_table(join(path, 'test1.txt'), header=None)
+        testData = pd.read_table(join(path, 'test1.txt'), header=None)
         # print(testData.head())
-        trustNet  = pd.read_table(join(path, 'trustnetwork.txt'), header=None).to_numpy()
+        trustNet = pd.read_table(join(path, 'trustnetwork.txt'), header=None).to_numpy()
         # print(trustNet[:5])
         trustNet -= 1
-        trainData-= 1
+        trainData -= 1
         testData -= 1
-        self.trustNet  = trustNet
+        self.trustNet = trustNet
         self.trainData = trainData
-        self.testData  = testData
+        self.testData = testData
         self.trainUser = np.array(trainData[:][0])
         self.trainUniqueUsers = np.unique(self.trainUser)
         self.trainItem = np.array(trainData[:][1])
         # self.trainDataSize = len(self.trainUser)
-        self.testUser  = np.array(testData[:][0])
+        self.testUser = np.array(testData[:][0])
         self.testUniqueUsers = np.unique(self.testUser)
-        self.testItem  = np.array(testData[:][1])
+        self.testItem = np.array(testData[:][1])
         self.Graph = None
-        print(f"LastFm Sparsity : {(len(self.trainUser) + len(self.testUser))/self.n_users/self.m_items}")
-        
+        print(f"LastFm Sparsity : {(len(self.trainUser) + len(self.testUser)) / self.n_users / self.m_items}")
+
         # (users,users)
-        self.socialNet    = csr_matrix((np.ones(len(trustNet)), (trustNet[:,0], trustNet[:,1]) ), shape=(self.n_users,self.n_users))
+        self.socialNet = csr_matrix((np.ones(len(trustNet)), (trustNet[:, 0], trustNet[:, 1])),
+                                    shape=(self.n_users, self.n_users))
         # (users,items), bipartite graph
-        self.UserItemNet  = csr_matrix((np.ones(len(self.trainUser)), (self.trainUser, self.trainItem) ), shape=(self.n_users,self.m_items)) 
-        
+        self.UserItemNet = csr_matrix((np.ones(len(self.trainUser)), (self.trainUser, self.trainItem)),
+                                      shape=(self.n_users, self.m_items))
+
         # pre-calculate
         self._allPos = self.getUserPosItems(list(range(self.n_users)))
         self.allNeg = []
-        allItems    = set(range(self.m_items))
+        allItems = set(range(self.m_items))
         for i in range(self.n_users):
             pos = set(self._allPos[i])
             neg = allItems - pos
@@ -120,15 +125,15 @@ class LastFM(BasicDataset):
     @property
     def n_users(self):
         return 1892
-    
+
     @property
     def m_items(self):
         return 4489
-    
+
     @property
     def trainDataSize(self):
         return len(self.trainUser)
-    
+
     @property
     def testDict(self):
         return self.__testDict
@@ -141,22 +146,24 @@ class LastFM(BasicDataset):
         if self.Graph is None:
             user_dim = torch.LongTensor(self.trainUser)
             item_dim = torch.LongTensor(self.trainItem)
-            
+
             first_sub = torch.stack([user_dim, item_dim + self.n_users])
-            second_sub = torch.stack([item_dim+self.n_users, user_dim])
+            second_sub = torch.stack([item_dim + self.n_users, user_dim])
             index = torch.cat([first_sub, second_sub], dim=1)
             data = torch.ones(index.size(-1)).int()
-            self.Graph = torch.sparse.IntTensor(index, data, torch.Size([self.n_users+self.m_items, self.n_users+self.m_items]))
+            self.Graph = torch.sparse.IntTensor(index, data,
+                                                torch.Size([self.n_users + self.m_items, self.n_users + self.m_items]))
             dense = self.Graph.to_dense()
             D = torch.sum(dense, dim=1).float()
-            D[D==0.] = 1.
+            D[D == 0.] = 1.
             D_sqrt = torch.sqrt(D).unsqueeze(dim=0)
-            dense = dense/D_sqrt
-            dense = dense/D_sqrt.t()
+            dense = dense / D_sqrt
+            dense = dense / D_sqrt.t()
             index = dense.nonzero()
-            data  = dense[dense >= 1e-9]
+            data = dense[dense >= 1e-9]
             assert len(index) == len(data)
-            self.Graph = torch.sparse.FloatTensor(index.t(), data, torch.Size([self.n_users+self.m_items, self.n_users+self.m_items]))
+            self.Graph = torch.sparse.FloatTensor(index.t(), data, torch.Size(
+                [self.n_users + self.m_items, self.n_users + self.m_items]))
             self.Graph = self.Graph.coalesce().to(world.device)
         return self.Graph
 
@@ -173,7 +180,7 @@ class LastFM(BasicDataset):
             else:
                 test_data[user] = [item]
         return test_data
-    
+
     def getUserItemFeedback(self, users, items):
         """
         users:
@@ -184,35 +191,34 @@ class LastFM(BasicDataset):
             feedback [-1]
         """
         # print(self.UserItemNet[users, items])
-        return np.array(self.UserItemNet[users, items]).astype('uint8').reshape((-1, ))
-    
+        return np.array(self.UserItemNet[users, items]).astype('uint8').reshape((-1,))
+
     def getUserPosItems(self, users):
         posItems = []
         for user in users:
             posItems.append(self.UserItemNet[user].nonzero()[1])
         return posItems
-    
+
     def getUserNegItems(self, users):
         negItems = []
         for user in users:
             negItems.append(self.allNeg[user])
         return negItems
-            
-    
-    
+
     def __getitem__(self, index):
         user = self.trainUniqueUsers[index]
         # return user_id and the positive items of the user
         return user
-    
+
     def switch2test(self):
         """
         change dataset mode to offer test data to dataloader
         """
         self.mode = self.mode_dict['test']
-    
+
     def __len__(self):
         return len(self.trainUniqueUsers)
+
 
 class Loader(BasicDataset):
     """
@@ -221,7 +227,7 @@ class Loader(BasicDataset):
     gowalla dataset
     """
 
-    def __init__(self,config = world.config,path="../data/gowalla"):
+    def __init__(self, config=world.config, path="../data/gowalla"):
         # train or test
         cprint(f'loading [{path}]')
         self.split = config['A_split']
@@ -271,7 +277,7 @@ class Loader(BasicDataset):
         self.testUniqueUsers = np.array(testUniqueUsers)
         self.testUser = np.array(testUser)
         self.testItem = np.array(testItem)
-        
+
         self.Graph = None
         print(f"{self.trainDataSize} interactions for training")
         print(f"{self.testDataSize} interactions for testing")
@@ -292,15 +298,15 @@ class Loader(BasicDataset):
     @property
     def n_users(self):
         return self.n_user
-    
+
     @property
     def m_items(self):
         return self.m_item
-    
+
     @property
     def trainDataSize(self):
         return self.traindataSize
-    
+
     @property
     def testDict(self):
         return self.__testDict
@@ -309,11 +315,11 @@ class Loader(BasicDataset):
     def allPos(self):
         return self._allPos
 
-    def _split_A_hat(self,A):
+    def _split_A_hat(self, A):
         A_fold = []
         fold_len = (self.n_users + self.m_items) // self.folds
         for i_fold in range(self.folds):
-            start = i_fold*fold_len
+            start = i_fold * fold_len
             if i_fold == self.folds - 1:
                 end = self.n_users + self.m_items
             else:
@@ -328,6 +334,7 @@ class Loader(BasicDataset):
         index = torch.stack([row, col])
         data = torch.FloatTensor(coo.data)
         return torch.sparse.FloatTensor(index, data, torch.Size(coo.shape))
+
     '''    
     def getSparseGraph(self):
         print("loading adjacency matrix")
@@ -369,10 +376,11 @@ class Loader(BasicDataset):
                 print("don't split the matrix")
         return self.Graph
     '''
+
     def getSparseGraph(self):
         print("loading adjacency matrix")
         if self.Graph is None:
-        
+
             print("generating adjacency matrix")
             s = time()
             adj_mat = sp.dok_matrix((self.n_users + self.m_items, self.n_users + self.m_items), dtype=np.float32)
@@ -380,22 +388,20 @@ class Loader(BasicDataset):
             R = self.UserItemNet.tolil()
             adj_mat[:self.n_users, self.n_users:] = R
             adj_mat[self.n_users:, :self.n_users] = R.T
-            #adj_mat = adj_mat.tolil()
-            #adj_mat = adj_mat.todok()
+            # adj_mat = adj_mat.tolil()
+            # adj_mat = adj_mat.todok()
             # adj_mat = adj_mat + sp.eye(adj_mat.shape[0])
-                
-                
+
             end = time()
-            print(f"costing {end-s}s, saved norm_mat...")
-                
+            print(f"costing {end - s}s, saved norm_mat...")
 
             if self.split == True:
                 self.Graph = self._split_A_hat(adj_mat)
                 print("done split matrix")
             else:
-                #self.Graph = self._convert_sp_mat_to_sp_tensor(norm_adj)
+                # self.Graph = self._convert_sp_mat_to_sp_tensor(norm_adj)
                 self.Graph = adj_mat
-                #self.Graph = self.Graph.coalesce().to(world.device)
+                # self.Graph = self.Graph.coalesce().to(world.device)
                 print("don't split the matrix")
         return self.Graph
 

@@ -1,21 +1,22 @@
 import torch
-from torch import nn,optim
+from torch import nn, optim
 import numpy as np
 from register import dataset
 import utils
 
+
 class LightGCN(nn.Module):
-    def __init__(self,device=None):
+    def __init__(self, device=None):
         super(LightGCN, self).__init__()
 
         assert device is not None, "Please specify 'device'!"
-        self.device=device
-        self.lr=0.001
-        self.weight_decay=1e-4
-        self.n_layers=3
-        self.num_users=dataset.n_user
-        self.num_items=dataset.m_item
-        self.latent_dim=64
+        self.device = device
+        self.lr = 0.001
+        self.weight_decay = 1e-4
+        self.n_layers = 3
+        self.num_users = dataset.n_user
+        self.num_items = dataset.m_item
+        self.latent_dim = 64
         self.f = nn.Sigmoid()
 
         self.embedding_user = torch.nn.Embedding(
@@ -28,23 +29,23 @@ class LightGCN(nn.Module):
 
     def fit(self, adj, users, posItems, negItems):
         if type(adj) is not torch.Tensor:
-            adj_norm=utils.normalize_adj_tensor(adj)
-            adj=utils.to_tensor(adj_norm,device=self.device)
+            adj_norm = utils.normalize_adj_tensor(adj)
+            adj = utils.to_tensor(adj_norm, device=self.device)
         else:
-            adj_norm=utils.normalize_adj_tensor(adj)
-            adj=adj_norm.to(self.device)
-        #self.adj=adj
+            adj_norm = utils.normalize_adj_tensor(adj)
+            adj = adj_norm.to(self.device)
+        # self.adj=adj
 
         self._train_without_val(adj, users, posItems, negItems)
 
-    def getUsersRating(self,adj,users):
-        all_users,all_items=self.computer(adj)
-        users_emb=all_users[users.long()]
-        items_emb=all_items
-        rating=self.f(torch.matmul(users_emb,items_emb.t()))
+    def getUsersRating(self, adj, users):
+        all_users, all_items = self.computer(adj)
+        users_emb = all_users[users.long()]
+        items_emb = all_items
+        rating = self.f(torch.matmul(users_emb, items_emb.t()))
         return rating
 
-    def computer(self,adj):
+    def computer(self, adj):
         """
         propagate methods for lightGCN
         """
@@ -76,7 +77,6 @@ class LightGCN(nn.Module):
         gamma = torch.sum(inner_pro, dim=1)
         return gamma
 
-
     def getEmbedding(self, adj, users, pos_items, neg_items):
         all_users, all_items = self.computer(adj)
         users_emb = all_users[users]
@@ -87,8 +87,7 @@ class LightGCN(nn.Module):
         neg_emb_ego = self.embedding_item(neg_items)
         return users_emb, pos_emb, neg_emb, users_emb_ego, pos_emb_ego, neg_emb_ego
 
-
-    def bpr_loss(self,adj,users,pos,neg):
+    def bpr_loss(self, adj, users, pos, neg):
         (users_emb, pos_emb, neg_emb,
          userEmb0, posEmb0, negEmb0) = self.getEmbedding(adj, users.long(), pos.long(), neg.long())
         reg_loss = (1 / 2) * (userEmb0.norm(2).pow(2) +
@@ -103,43 +102,41 @@ class LightGCN(nn.Module):
 
         return loss, reg_loss
 
-    def _train_without_val(self,adj, users, posItems, negItems):
-            self.train()
-            optimizer=optim.Adam(self.parameters(),lr=self.lr,weight_decay=self.weight_decay)
-            for i in range(100):
-                optimizer.zero_grad()
-                users = users.to(self.device)
-                posItems = posItems.to(self.device)
-                negItems = negItems.to(self.device)
-                users, posItems, negItems = utils.shuffle(users, posItems, negItems)
-                total_batch = len(users) // 2048 + 1
-                aver_loss = 0.
-                for (batch_i,
-                     (batch_users,
-                      batch_pos,
-                      batch_neg)) in enumerate(utils.minibatch(users,
-                                                               posItems,
-                                                               negItems,
-                                                               batch_size=2048)):
-                    loss, reg_loss = self.bpr_loss(adj, batch_users, batch_pos, batch_neg)
-                    reg_loss = reg_loss * self.weight_decay
-                    loss = loss + reg_loss
-                    
-                    
-                    loss.backward()
-                    optimizer.step()
-                    
-                    aver_loss+=loss.cpu().item()
-                aver_loss = aver_loss / total_batch
-                if i%10==0:
-                    print(aver_loss)
+    def _train_without_val(self, adj, users, posItems, negItems):
+        self.train()
+        optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        for i in range(100):
+            optimizer.zero_grad()
+            users = users.to(self.device)
+            posItems = posItems.to(self.device)
+            negItems = negItems.to(self.device)
+            users, posItems, negItems = utils.shuffle(users, posItems, negItems)
+            total_batch = len(users) // 2048 + 1
+            aver_loss = 0.
+            for (batch_i,
+                 (batch_users,
+                  batch_pos,
+                  batch_neg)) in enumerate(utils.minibatch(users,
+                                                           posItems,
+                                                           negItems,
+                                                           batch_size=2048)):
+                loss, reg_loss = self.bpr_loss(adj, batch_users, batch_pos, batch_neg)
+                reg_loss = reg_loss * self.weight_decay
+                loss = loss + reg_loss
 
-            self.eval()
-            
-    
-            #users = users.to(self.device)
-            #posItems = posItems.to(self.device)
-            #negItems = negItems.to(self.device)
-            #users, posItems, negItems = utils.shuffle(users, posItems, negItems)
-            output=self.forward(adj, users, posItems)
-            self.output=output
+                loss.backward()
+                optimizer.step()
+
+                aver_loss += loss.cpu().item()
+            aver_loss = aver_loss / total_batch
+            if i % 10 == 0:
+                print(aver_loss)
+
+        self.eval()
+
+        # users = users.to(self.device)
+        # posItems = posItems.to(self.device)
+        # negItems = negItems.to(self.device)
+        # users, posItems, negItems = utils.shuffle(users, posItems, negItems)
+        output = self.forward(adj, users, posItems)
+        self.output = output

@@ -22,16 +22,15 @@ DATA_PATH = join(ROOT_PATH, 'data')
 BOARD_PATH = join(CODE_PATH, 'runs')
 FILE_PATH = join(CODE_PATH, 'checkpoints')
 
-
 config = {}
 all_dataset = ['lastfm', 'gowalla', 'yelp2018', 'amazon', 'mooc', 'ml-1m']
-all_models  = ['mf', 'lgn']
+all_models = ['mf', 'lgn']
 # config['batch_size'] = 4096
 config['bpr_batch_size'] = args.bpr_batch
 config['latent_dim_rec'] = args.recdim
-config['lightGCN_n_layers']= args.layer
+config['lightGCN_n_layers'] = args.layer
 config['dropout'] = args.dropout
-config['keep_prob']  = args.keepprob
+config['keep_prob'] = args.keepprob
 config['A_n_fold'] = args.a_fold
 config['test_u_batch_size'] = args.testbatch
 config['multicore'] = args.multicore
@@ -53,9 +52,6 @@ if dataset not in all_dataset:
 if model_name not in all_models:
     raise NotImplementedError(f"Haven't supported {model_name} yet!, try {all_models}")
 
-
-
-
 TRAIN_epochs = args.epochs
 LOAD = args.load
 PATH = args.path
@@ -64,13 +60,12 @@ tensorboard = args.tensorboard
 comment = args.comment
 # let pandas shut up
 from warnings import simplefilter
+
 simplefilter(action="ignore", category=FutureWarning)
 
 
-
-def cprint(words : str):
+def cprint(words: str):
     print(f"\033[0;30;43m{words}\033[0m")
-
 
 # font: ANSI Shadow
 # refer to http://patorjk.com/software/taag/#p=display&f=ANSI%20Shadow&t=Sampling
