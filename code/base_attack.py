@@ -28,7 +28,8 @@ class BaseAttack(Module):
     def attack(self):
         pass
 
-    def check_adj(self, adj):
+    @staticmethod
+    def check_adj(adj):
         assert np.abs(adj - adj.T).sum() == 0, "Input graph is not symmetric"
         assert adj.tocsr().max() == 1, "Max value should be 1!"
         assert adj.tocsr.min() == 0, "Min value should be 0!"

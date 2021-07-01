@@ -90,7 +90,7 @@ class LightGCN(BasicModel):
                  dataset: BasicDataset):
         super(LightGCN, self).__init__()
         self.config = config
-        self.dataset: dataloader.BasicDataset = dataset
+        self.dataset: BasicDataset = dataset
         self.__init_weight()
 
     def __init_weight(self):
@@ -139,8 +139,9 @@ class LightGCN(BasicModel):
             graph = self.__dropout_x(self.Graph, keep_prob)
         return graph
 
-    def _convert_sp_mat_to_sp_tensor(self, X):
-        coo = X.tocoo().astype(np.float32)
+    @staticmethod
+    def _convert_sp_mat_to_sp_tensor(x):
+        coo = x.tocoo().astype(np.float32)
         row = torch.Tensor(coo.row).long()
         col = torch.Tensor(coo.col).long()
         index = torch.stack([row, col])
