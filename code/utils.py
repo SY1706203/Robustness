@@ -28,8 +28,8 @@ def preprocess(adj, features, labels, preprocess_adj=False, preprocess_feature=F
 
     labels = torch.LongTensor(labels)
     if sparse:
-        adj = sparse_mx_to_sparse_tensor(adj)
-        features = sparse_mx_to_sparse_tensor(features)
+        adj = sparse_mx_to_torch_sparse_tensor(adj)
+        features = sparse_mx_to_torch_sparse_tensor(features)
     else:
         features = torch.FloatTensor(np.array(features.todense()))
         adj = torch.FloatTensor(adj.todense())
@@ -80,7 +80,7 @@ def normalize_adj_tensor(adj, sparse=False):
         # return normalize_sparse_tensor(adj)
         adj = to_scipy(adj)
         mx = normalize_adj(adj)
-        return sparse_mx_to_sparse_tensor(mx).to(device)
+        return sparse_mx_to_torch_sparse_tensor(mx).to(device)
     else:
         mx = adj + torch.eye(adj.shape[0]).to(device)
         rowsum = mx.sum(1)
