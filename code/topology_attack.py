@@ -44,7 +44,7 @@ class PGDAttack(BaseAttack):
         
 
         victim_model.eval()
-        epochs=5
+        epochs=50
         for t in tqdm(range(epochs)):
     
             users = users.to(self.device)
@@ -52,16 +52,30 @@ class PGDAttack(BaseAttack):
             negItems = negItems.to(self.device)
             users, posItems, negItems = utils.shuffle(users, posItems, negItems)
             
-            
             modified_adj=self.get_modified_adj(ori_adj)
             adj_norm=utils.normalize_adj_tensor(modified_adj)
-            output=victim_model(adj_norm, users, posItems)
-            loss, reg_loss=victim_model.bpr_loss(adj_norm, users, posItems, negItems)
+            
+            for (batch_i,
+                     (batch_users,
+                      batch_pos,
+                      batch_neg)) in enumerate(utils.minibatch(users,
+                                                               posItems,
+                                                               negItems,
+                                                               batch_size=2048)):
+                    loss, reg_loss = victim_model.bpr_loss(adj_norm, batch_users, batch_pos, batch_neg)
+                    #reg_loss = reg_loss * self.weight_decay
+                    #loss = loss + reg_loss
+            
+            
+            
+                    #output=victim_model(adj_norm, users, posItems)
+                    #loss, reg_loss=victim_model.bpr_loss(adj_norm, users, posItems, negItems)
             
             adj_grad=torch.autograd.grad(loss,self.adj_changes)[0]
 
             
-            lr=200/np.sqrt(t+1)
+            #lr=200/np.sqrt(t+1)
+            lr=0.2
             self.adj_changes.data.add_(lr*adj_grad)
 
             self.projection(perturbations)
@@ -70,7 +84,7 @@ class PGDAttack(BaseAttack):
         self.modified_adj=self.get_modified_adj(ori_adj).detach()
 
     def random_sample(self, ori_adj, perturbations, users, posItems, negItems):
-        K=10
+        K=5
         best_loss=-1000
         victim_model=self.surrogate
         with torch.no_grad():
@@ -94,14 +108,21 @@ class PGDAttack(BaseAttack):
             
                 modified_adj=self.get_modified_adj(ori_adj)
                 adj_norm=utils.normalize_adj_tensor(modified_adj)
-                output=victim_model(adj_norm, users, posItems)
-                loss, reg_loss=victim_model.bpr_loss(adj_norm, users, posItems, negItems)
+            
+                for (batch_i,
+                         (batch_users,
+                          batch_pos,
+                          batch_neg)) in enumerate(utils.minibatch(users,
+                                                                   posItems,
+                                                                   negItems,
+                                                                   batch_size=2048)):
+                        loss, reg_loss = victim_model.bpr_loss(adj_norm, batch_users, batch_pos, batch_neg)
                 
                 
-                #print(loss)
-                if best_loss<loss:
-                    best_loss=loss
-                    best_s=sampled
+                        #print(loss)
+                        if best_loss<loss:
+                            best_loss=loss
+                            best_s=sampled
             self.adj_changes.data.copy_(torch.tensor(best_s))
 
     def _loss(self,output,labels):
@@ -160,23 +181,44 @@ class MinMax(PGDAttack):
                  attack_structure=True,attack_features=False,device='cpu'):
         super(MinMax, self).__init__(model,nnodes,loss_type,feature_shape,attack_structure,attack_features,device=device)
 
-    def attack(self,ori_features,ori_adj,labels,idx_train,perturbations):
+    def attack(self,ori_adj,perturbations, users, posItems, negItems):
         victim_model=self.surrogate
 
-        self.sparse_features=sp.issparse(ori_features)
-        ori_adj,ori_features,labels=utils.to_tensor(ori_adj,ori_features,labels,device=self.device)
-
+        #self.sparse_features=sp.issparse(ori_features)
+        #ori_adj,ori_features,labels=utils.to_tensor(ori_adj,ori_features,labels,device=self.device)
+        ori_adj=utils.to_tensor(ori_adj.cpu(),device=self.device)
+        
         optimizer=optim.Adam(victim_model.parameters(),lr=0.01)
 
-        epochs=200
+        epochs=50
         victim_model.eval()
         for t in tqdm(range(epochs)):
             # update victim model
             victim_model.train()
+            '''
             modified_adj=self.get_modified_adj(ori_adj)
             adj_norm=utils.normalize_adj_tensor(modified_adj)
             output=victim_model(ori_features,adj_norm)
             loss=self._loss(output[idx_train],labels[idx_train])
+            '''
+            users = users.to(self.device)
+            posItems = posItems.to(self.device)
+            negItems = negItems.to(self.device)
+            users, posItems, negItems = utils.shuffle(users, posItems, negItems)
+            
+            modified_adj=self.get_modified_adj(ori_adj)
+            adj_norm=utils.normalize_adj_tensor(modified_adj)
+            
+            for (batch_i,
+                     (batch_users,
+                      batch_pos,
+                      batch_neg)) in enumerate(utils.minibatch(users,
+                                                               posItems,
+                                                               negItems,
+                                                               batch_size=2048)):
+                    loss, reg_loss = victim_model.bpr_loss(adj_norm, batch_users, batch_pos, batch_neg)
+                    reg_loss = reg_loss * 5e-4
+                    loss = loss + reg_loss
 
             optimizer.zero_grad()
             loss.backward()
@@ -184,21 +226,37 @@ class MinMax(PGDAttack):
 
             # generate pgd attack
             victim_model.eval()
+            '''
             modified_adj=self.get_modified_adj(ori_adj)
             adj_norm=utils.normalize_adj_tensor(modified_adj)
             output=victim_model(ori_features,adj_norm)
             loss=self._loss(output[idx_train,labels[idx_train]])
             adj_grad=torch.autograd.grad(loss,self.adj_changes)[0]
+            '''
+            users = users.to(self.device)
+            posItems = posItems.to(self.device)
+            negItems = negItems.to(self.device)
+            users, posItems, negItems = utils.shuffle(users, posItems, negItems)
+            
+            modified_adj=self.get_modified_adj(ori_adj)
+            adj_norm=utils.normalize_adj_tensor(modified_adj)
+            
+            for (batch_i,
+                     (batch_users,
+                      batch_pos,
+                      batch_neg)) in enumerate(utils.minibatch(users,
+                                                               posItems,
+                                                               negItems,
+                                                               batch_size=2048)):
+                    loss, reg_loss = victim_model.bpr_loss(adj_norm, batch_users, batch_pos, batch_neg)
+            adj_grad=torch.autograd.grad(loss,self.adj_changes)[0]
 
-            if self.loss_type=='CE':
-                lr=200/np.sqrt(t+1)
-                self.adj_changes.data.add_(lr*adj_grad)
+            lr=0.2
+            self.adj_changes.data.add_(lr*adj_grad)
 
-            if self.loss_type=='CW':
-                lr=0.1/np.sqrt(t+1)
-                self.adj_changes.data.add_(lr*adj_grad)
+
             
             self.projection(perturbations)
 
-        self.random_sample(ori_adj,ori_features,labels,idx_train,perturbations)
+        self.random_sample(ori_adj, perturbations, users, posItems, negItems)
         self.modified_adj=self.get_modified_adj(ori_adj).detach()

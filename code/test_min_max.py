@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 import torch.optim as optim
-from topology_attack import PGDAttack
+from topology_attack import MinMax
 import argparse
 import register
 from register import dataset
@@ -55,12 +55,12 @@ users, posItems, negItems=utils.getTrainSet(dataset)
 Recmodel = lightgcn.LightGCN(device)
 Recmodel=Recmodel.to(device)
 #adj=adj.to(device)
-Recmodel.fit(adj, users, posItems, negItems)
+#Recmodel.fit(adj, users, posItems, negItems)
 
-Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
+#Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
 # Setup Attack Model
 
-model=PGDAttack(model=Recmodel,nnodes=adj.shape[0],loss_type='CE',device=device)
+model=MinMax(model=Recmodel,nnodes=adj.shape[0],loss_type='CE',device=device)
 
 model=model.to(device)
 
