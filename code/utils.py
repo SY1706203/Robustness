@@ -12,103 +12,111 @@ from sklearn.metrics import roc_auc_score
 import random
 import os
 
+
 def tensor2onehot(labels):
-    eye=torch.eye(labels.max()+1)
-    onehot_mx=eye[labels]
+    eye = torch.eye(labels.max() + 1)
+    onehot_mx = eye[labels]
     return onehot_mx.to(labels.device)
 
-def preprocess(adj,features,labels,preprocess_adj=False,preprocess_feature=False,sparse=False,device='cpu'):
+
+def preprocess(adj, features, labels, preprocess_adj=False, preprocess_feature=False, sparse=False, device='cpu'):
     if preprocess_adj:
-        adj_norm=normalize_adj(adj)
+        adj_norm = normalize_adj(adj)
 
     if preprocess_feature:
-        features=normalize_feature(features)
+        features = normalize_feature(features)
 
-    labels=torch.LongTensor(labels)
+    labels = torch.LongTensor(labels)
     if sparse:
-        adj=sparse_mx_to_sparse_tensor(adj)
-        features=sparse_mx_to_sparse_tensor(features)
+        adj = sparse_mx_to_torch_sparse_tensor(adj)
+        features = sparse_mx_to_torch_sparse_tensor(features)
     else:
-        features=torch.FloatTensor(np.array(features.todense()))
-        adj=torch.FloatTensor(adj.todense())
-    return adj.to(device),features.to(device),labels.to(device)
+        features = torch.FloatTensor(np.array(features.todense()))
+        adj = torch.FloatTensor(adj.todense())
+    return adj.to(device), features.to(device), labels.to(device)
 
-def to_tensor(adj,device='cuda:0'):
+
+def to_tensor(adj, device='cuda:0'):
     if sp.issparse(adj):
-        adj=sparse_mx_to_torch_sparse_tensor(adj)
+        adj = sparse_mx_to_torch_sparse_tensor(adj)
     else:
-        adj=torch.FloatTensor(adj)
-    
+        adj = torch.FloatTensor(adj)
+
     return adj.to(device)
+
 
 def normalize_adj(mx):
     """Row-normalize sparse matrix"""
     if type(mx) is not sp.lil.lil_matrix:
-        mx=mx.tolil()
-    if mx[0,0]==0:
-        mx=mx+sp.eye(mx.shape[0])
-    rowsum=np.array(mx.sum(1))
-    r_inv=np.power(rowsum,-1/2).flatten()
-    r_inv[np.isinf(r_inv)]=0.
-    r_mat_inv=sp.diags(r_inv)
-    mx=r_mat_inv.dot(mx)
-    mx=mx.dot(r_mat_inv)
+        mx = mx.tolil()
+    if mx[0, 0] == 0:
+        mx = mx + sp.eye(mx.shape[0])
+    rowsum = np.array(mx.sum(1))
+    r_inv = np.power(rowsum, -1 / 2).flatten()
+    r_inv[np.isinf(r_inv)] = 0.
+    r_mat_inv = sp.diags(r_inv)
+    mx = r_mat_inv.dot(mx)
+    mx = mx.dot(r_mat_inv)
     return mx
+
 
 def normalize_feature(mx):
     """Row-normalize sparse matrix"""
     if type(mx) is not sp.lil.lil_matrix:
-        mx=mx.tolil()
-    rowsum=np.array(mx.sum(1))
-    r_inv=np.power(rowsum,-1).flatten()
-    r_inv[np.isinf(r_inv)]=0.
-    r_mat_inv=sp.diags(r_inv)
-    mx=r_mat_inv.dot(mx)
+        mx = mx.tolil()
+    rowsum = np.array(mx.sum(1))
+    r_inv = np.power(rowsum, -1).flatten()
+    r_inv[np.isinf(r_inv)] = 0.
+    r_mat_inv = sp.diags(r_inv)
+    mx = r_mat_inv.dot(mx)
     return mx
 
-def normalize_adj_tensor(adj,sparse=False):
-    device=torch.device("cuda" if adj.is_cuda else "cpu")
+
+def normalize_adj_tensor(adj, sparse=False):
+    device = torch.device("cuda" if adj.is_cuda else "cpu")
     if sparse:
         # TODO if this is too slow, uncomment the following code,
         # but you need to install torch_scatter
         # return normalize_sparse_tensor(adj)
-        adj=to_scipy(adj)
-        mx=normalize_adj(adj)
-        return sparse_mx_to_sparse_tensor(mx).to(device)
+        adj = to_scipy(adj)
+        mx = normalize_adj(adj)
+        return sparse_mx_to_torch_sparse_tensor(mx).to(device)
     else:
-        mx=adj+torch.eye(adj.shape[0]).to(device)
-        rowsum=mx.sum(1)
-        r_inv=rowsum.pow(-1/2).flatten()
-        r_inv[torch.isinf(r_inv)]=0.
-        r_mat_inv=torch.diag(r_inv)
-        mx=r_mat_inv@mx
-        mx=mx@r_mat_inv
+        mx = adj + torch.eye(adj.shape[0]).to(device)
+        rowsum = mx.sum(1)
+        r_inv = rowsum.pow(-1 / 2).flatten()
+        r_inv[torch.isinf(r_inv)] = 0.
+        r_mat_inv = torch.diag(r_inv)
+        mx = r_mat_inv @ mx
+        mx = mx @ r_mat_inv
     return mx
 
 
 def to_scipy(tensor):
     if is_sparse_tensor(tensor):
-        values=tensor._values()
-        indices=tensor._indices()
-        return sp.csr_matrix((values.cpu().numpy(),indices.cpu().numpy()),shape=tensor.shape)
+        values = tensor._values()
+        indices = tensor._indices()
+        return sp.csr_matrix((values.cpu().numpy(), indices.cpu().numpy()), shape=tensor.shape)
     else:
-        indices=tensor.nonzero().t()
-        values=tensor[indices[0],indices[1]]
-        return sp.csr_matrix((values.cpu().numpy(),indices.cpu().numpy()),shape=tensor.shape)
+        indices = tensor.nonzero().t()
+        values = tensor[indices[0], indices[1]]
+        return sp.csr_matrix((values.cpu().numpy(), indices.cpu().numpy()), shape=tensor.shape)
+
 
 def is_sparse_tensor(tensor):
-    if tensor.layout==torch.sparse_coo:
+    if tensor.layout == torch.sparse_coo:
         return True
     else:
         return False
 
+
 def sparse_mx_to_torch_sparse_tensor(sparse_mx):
     """Convert a scipy sparse matrix to a torch sparse tensor."""
-    sparse_mx=sparse_mx.tocoo().astype(np.float32)
-    indices=torch.from_numpy(np.vstack((sparse_mx.row,sparse_mx.col)).astype(np.int64))
-    values=torch.from_numpy(sparse_mx.data)
-    shape=torch.Size(sparse_mx.shape)
-    return torch.sparse.FloatTensor(indices,values,shape)
+    sparse_mx = sparse_mx.tocoo().astype(np.float32)
+    indices = torch.from_numpy(np.vstack((sparse_mx.row, sparse_mx.col)).astype(np.int64))
+    values = torch.from_numpy(sparse_mx.data)
+    shape = torch.Size(sparse_mx.shape)
+    return torch.sparse.FloatTensor(indices, values, shape)
 
 
 class BPRLoss:
@@ -165,7 +173,7 @@ def UniformSample_original(users, dataset):
         end = time()
         sample_time1 += end - start
     '''
-    
+
     allPos = dataset.allPos
     S = []
     sample_time1 = 0.
@@ -176,7 +184,7 @@ def UniformSample_original(users, dataset):
         if len(posForUser) == 0:
             continue
         sample_time2 += time() - start
-        #posindex = np.random.randint(0, len(posForUser))
+        # posindex = np.random.randint(0, len(posForUser))
         for posindex in range(len(posForUser)):
             positem = posForUser[posindex]
             while True:
@@ -199,7 +207,7 @@ def getTrainSet(dataset):
     users = torch.Tensor(S[:, 0]).long()
     posItems = torch.Tensor(S[:, 1]).long()
     negItems = torch.Tensor(S[:, 2]).long()
-    
+
     return users, posItems, negItems
 
 
