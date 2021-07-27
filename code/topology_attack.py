@@ -90,7 +90,7 @@ class PGDAttack(BaseAttack):
                 if sampled.sum() > perturbations:
                     continue
                 self.adj_changes.data.copy_(torch.tensor(sampled))
-                modified_adj = self.get_modified_adj(ori_adj)
+                modified_adj = self.get_modified_adj(ori_adj, num_users)
                 adj_norm = utils.normalize_adj_tensor(modified_adj)
 
                 users = users.to(self.device)
