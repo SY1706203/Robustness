@@ -33,7 +33,7 @@ class PGDAttack(BaseAttack):
 
         self.complementary = None
 
-    def attack(self, ori_adj, perturbations, users, posItems, negItems):
+    def attack(self, ori_adj, perturbations, users, posItems, negItems, num_users):
         victim_model = self.surrogate
 
         # self.sparse_features=sp.issparse(ori_features)
@@ -49,7 +49,7 @@ class PGDAttack(BaseAttack):
             negItems = negItems.to(self.device)
             users, posItems, negItems = utils.shuffle(users, posItems, negItems)
 
-            modified_adj = self.get_modified_adj(ori_adj)
+            modified_adj = self.get_modified_adj(ori_adj, num_users)
             adj_norm = utils.normalize_adj_tensor(modified_adj)
 
             for (batch_i,
@@ -74,10 +74,10 @@ class PGDAttack(BaseAttack):
 
             self.projection(perturbations)
 
-        self.random_sample(ori_adj, perturbations, users, posItems, negItems)
-        self.modified_adj = self.get_modified_adj(ori_adj).detach()
+        self.random_sample(ori_adj, perturbations, users, posItems, negItems, num_users)
+        self.modified_adj = self.get_modified_adj(ori_adj, num_users).detach()
 
-    def random_sample(self, ori_adj, perturbations, users, posItems, negItems):
+    def random_sample(self, ori_adj, perturbations, users, posItems, negItems, num_users):
         K = 5
         best_loss = -1000
         victim_model = self.surrogate
@@ -98,7 +98,7 @@ class PGDAttack(BaseAttack):
                 negItems = negItems.to(self.device)
                 users, posItems, negItems = utils.shuffle(users, posItems, negItems)
 
-                modified_adj = self.get_modified_adj(ori_adj)
+                modified_adj = self.get_modified_adj(ori_adj, num_users)
                 adj_norm = utils.normalize_adj_tensor(modified_adj)
 
                 for (batch_i,
@@ -136,8 +136,7 @@ class PGDAttack(BaseAttack):
         else:
             self.adj_changes.data.copy_(torch.clamp(self.adj_changes.data, min=0, max=1))
 
-    def get_modified_adj(self, ori_adj):
-
+    def get_modified_adj(self, ori_adj, num_users):
         if self.complementary is None:
             self.complementary = (torch.ones_like(ori_adj) - torch.eye(self.nnodes).to(self.device) - ori_adj) - ori_adj
             # self.complementary=(1-torch.eye(self.nnodes).to(self.device)-ori_adj)-ori_adj
@@ -148,6 +147,8 @@ class PGDAttack(BaseAttack):
         m = m + m.t()
         modified_adj = self.complementary * m + ori_adj
         # modified_adj=m+ori_adj
+        modified_adj = modified_adj[:num_users, :num_users] = 0
+        modified_adj = modified_adj[num_users:, num_users:] = 0
 
         return modified_adj
 
@@ -174,7 +175,7 @@ class MinMax(PGDAttack):
         super(MinMax, self).__init__(model, nnodes, loss_type, feature_shape, attack_structure, attack_features,
                                      device=device)
 
-    def attack(self, ori_adj, perturbations, users, posItems, negItems):
+    def attack(self, ori_adj, perturbations, users, posItems, negItems, num_users):
         victim_model = self.surrogate
 
         # self.sparse_features=sp.issparse(ori_features)
@@ -199,7 +200,7 @@ class MinMax(PGDAttack):
             negItems = negItems.to(self.device)
             users, posItems, negItems = utils.shuffle(users, posItems, negItems)
 
-            modified_adj = self.get_modified_adj(ori_adj)
+            modified_adj = self.get_modified_adj(ori_adj, num_users)
             adj_norm = utils.normalize_adj_tensor(modified_adj)
 
             for (batch_i,
@@ -231,7 +232,7 @@ class MinMax(PGDAttack):
             negItems = negItems.to(self.device)
             users, posItems, negItems = utils.shuffle(users, posItems, negItems)
 
-            modified_adj = self.get_modified_adj(ori_adj)
+            modified_adj = self.get_modified_adj(ori_adj, num_users)
             adj_norm = utils.normalize_adj_tensor(modified_adj)
 
             for (batch_i,
@@ -249,5 +250,5 @@ class MinMax(PGDAttack):
 
             self.projection(perturbations)
 
-        self.random_sample(ori_adj, perturbations, users, posItems, negItems)
-        self.modified_adj = self.get_modified_adj(ori_adj).detach()
+        self.random_sample(ori_adj, perturbations, users, posItems, negItems, num_users)
+        self.modified_adj = self.get_modified_adj(ori_adj, num_users).detach()

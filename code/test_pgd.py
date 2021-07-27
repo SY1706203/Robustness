@@ -51,6 +51,8 @@ users, posItems, negItems = utils.getTrainSet(dataset)
 # Setup Victim Model
 Recmodel = lightgcn.LightGCN(device)
 Recmodel = Recmodel.to(device)
+
+num_users = Recmodel.num_users
 # adj=adj.to(device)
 Recmodel.fit(adj, users, posItems, negItems)
 
@@ -61,7 +63,7 @@ model = PGDAttack(model=Recmodel, nnodes=adj.shape[0], loss_type='CE', device=de
 
 model = model.to(device)
 
-model.attack(adj, perturbations, users, posItems, negItems)
+model.attack(adj, perturbations, users, posItems, negItems, num_users)
 
 modified_adj = model.modified_adj
 print((modified_adj == adj).all())
