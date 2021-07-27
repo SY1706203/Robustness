@@ -147,8 +147,8 @@ class PGDAttack(BaseAttack):
         m = m + m.t()
         modified_adj = self.complementary * m + ori_adj
         # modified_adj=m+ori_adj
-        modified_adj = modified_adj[:num_users, :num_users] = 0
-        modified_adj = modified_adj[num_users:, num_users:] = 0
+        modified_adj[:num_users, :num_users] = 0
+        modified_adj[num_users:, num_users:] = 0
 
         return modified_adj
 
