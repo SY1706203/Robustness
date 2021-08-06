@@ -13,6 +13,17 @@ import random
 import os
 
 
+class MLP(nn.Module):
+    def __init__(self, input_size, output_size):
+        super().__init__()
+        self.layer_1 = nn.Linear(input_size, input_size)
+        self.layer_2 = nn.Linear(input_size, output_size)
+        self.activation_func = nn.Sigmoid()
+
+    def forward(self, input_emb):
+        return self.activation_func(self.layer_2(self.activation_func(self.layer_1(input_emb))))
+
+
 def tensor2onehot(labels):
     eye = torch.eye(labels.max() + 1)
     onehot_mx = eye[labels]
@@ -333,6 +344,7 @@ def getLabel(test_data, pred_data):
         pred = np.array(pred).astype("float")
         r.append(pred)
     return np.array(r).astype('float')
+
 
 # ====================end Metrics=============================
 # =========================================================
