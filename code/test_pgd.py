@@ -88,6 +88,8 @@ def pre_dcl_loss(recmodel, modified_adj, users_, poss):
     pos_emb = nn.functional.normalize(pos_emb, dim=1)
 
     mlp = utils.MLP(users_emb.size(-1), users_emb.size(-1))
+    mlp = mlp.to(device)
+
     users_emb = mlp(users_emb)
     pos_emb = mlp(pos_emb)
 
