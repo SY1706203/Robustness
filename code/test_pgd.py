@@ -45,7 +45,7 @@ adj = torch.FloatTensor(adj.todense()).to(device)
 # perturbations = int(args.ptb_rate * ((dataset.trainDataSize+dataset.testDataSize)//2))
 perturbations_a = int(args.ptb_rate * (adj.sum() // 2))
 perturbations_b = int(args.ptb_rate * (adj.sum() // 2.5))
-# print(perturbations)
+print("two perturbations are same: ", perturbations_a == perturbations_b)
 
 
 users, posItems, negItems = utils.getTrainSet(dataset)
@@ -100,16 +100,24 @@ def dcl_loss_vec(recmodel_a, recmodel_b, modified_adj_a, modified_adj_b, users_,
     all_emb_a = pre_dcl_loss(recmodel_a, modified_adj_a, users_, poss)
     all_emb_b = pre_dcl_loss(recmodel_b, modified_adj_b, users_, poss)
 
-    contrastive_simliarity = torch.exp(torch.diag(torch.matmul(all_emb_a, all_emb_b.t().contiguous())) / recmodel_a.T)
-    self_neg_contrastive_simliarity_matrix = torch.matmul(all_emb_a, all_emb_a.t().contiguous())
+    contrastive_similarity = torch.exp(torch.diag(torch.matmul(all_emb_a, all_emb_b.t().contiguous())) / recmodel_a.T)
+    # contrastive_similarity size： [batch_size,]
+    self_neg_similarity_matrix = torch.matmul(all_emb_a, all_emb_a.t().contiguous())  # z1 * z1
+    contrastive_neg_similarity_matrix = torch.matmul(all_emb_a, all_emb_b.t().contiguous())  # z1 * z2
+    # self_neg_contrastive_similarity_matrix size： [batch_size, batch_size]
+    
     # mask diagonal
-    self_neg_contrastive_simliarity_matrix.masked_fill_(torch.eye(all_emb_b.size(0), all_emb_b.size(0)).bool(), 0)
-    # concatenates z1 * z1 with 0-diagonal and z1 * z2 in row
-    neg_contrastive_simliarity_matrix = \
-        torch.cat([self_neg_contrastive_simliarity_matrix, torch.matmul(all_emb_a, all_emb_b.t().contiguous())], -1)
-    neg_contrastive_simliarity = torch.sum(torch.exp(neg_contrastive_simliarity_matrix) / recmodel_a.T, 1)
+    mask = torch.eye(all_emb_b.size(0), all_emb_b.size(0)).bool()  # mask with diagonal all True others all False
+    self_neg_similarity_matrix.masked_fill_(mask, 0)
+    contrastive_neg_similarity_matrix.masked_fill_(mask, 0)
+    # concatenates z1 * z1 with 0-diagonal and z1 * z2 with 0-diagonal in row
+    # we mask 2 diagonal out because we don't want to get the similarity of an embedding with itself
+    neg_contrastive_similarity_matrix = \
+        torch.cat([self_neg_similarity_matrix, contrastive_neg_similarity_matrix], -1)
+    # sum the matrix up by row
+    neg_contrastive_similarity = torch.sum(torch.exp(neg_contrastive_similarity_matrix) / recmodel_a.T, 1)
 
-    loss_vec = -torch.log(contrastive_simliarity / contrastive_simliarity + neg_contrastive_simliarity)
+    loss_vec = -torch.log(contrastive_similarity / contrastive_similarity + neg_contrastive_similarity)
 
     return loss_vec
 
