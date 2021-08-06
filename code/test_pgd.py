@@ -101,11 +101,11 @@ def dcl_loss_vec(recmodel_a, recmodel_b, modified_adj_a, modified_adj_b, users_,
     contrastive_simliarity = torch.exp(torch.diag(torch.matmul(all_emb_a, all_emb_b.t().contiguous())) / recmodel_a.T)
     self_neg_contrastive_simliarity_matrix = torch.matmul(all_emb_a, all_emb_a.t().contiguous())
     # mask diagonal
-    self_neg_contrastive_simliarity_matrix.masked_fill_(torch.eye(all_emb_b.size(0), all_emb_b.size(0)).bool())
+    self_neg_contrastive_simliarity_matrix.masked_fill_(torch.eye(all_emb_b.size(0), all_emb_b.size(0)).bool(), 0)
     # concatenates z1 * z1 with 0-diagonal and z1 * z2 in row
     neg_contrastive_simliarity_matrix = \
         torch.cat([self_neg_contrastive_simliarity_matrix, torch.matmul(all_emb_a, all_emb_b.t().contiguous())], -1)
-    neg_contrastive_simliarity = sum(torch.exp(neg_contrastive_simliarity_matrix) / recmodel_a.T, 1)
+    neg_contrastive_simliarity = torch.sum(torch.exp(neg_contrastive_simliarity_matrix) / recmodel_a.T, 1)
 
     loss_vec = -torch.log(contrastive_simliarity / contrastive_simliarity + neg_contrastive_simliarity)
 
@@ -116,7 +116,7 @@ def dcl_loss(recmodel_a, recmodel_b, modified_adj_a, modified_adj_b, users_, pos
     loss_vec_a = dcl_loss_vec(recmodel_a, recmodel_b, modified_adj_a, modified_adj_b, users_, poss)
     loss_vec_b = dcl_loss_vec(recmodel_a, recmodel_b, modified_adj_b, modified_adj_a, users_, poss)
 
-    return torch.sum(torch.add(loss_vec_a, loss_vec_b)) / (2 * loss_vec_a.size())
+    return torch.sum(torch.add(loss_vec_a, loss_vec_b)) / (2 * loss_vec_a.size(0))
 
 
 def dcl_train():
@@ -141,7 +141,7 @@ def dcl_train():
         aver_loss = 0.
         for (batch_i, (batch_users, batch_pos, _)) \
                 in enumerate(utils.minibatch(users_, posItems_, negItems_, batch_size=2048)):
-            loss, reg_loss = dcl_loss(Rec_model_a, Rec_model_b, modified_adj_a, modified_adj_b, batch_users, batch_pos)
+            loss = dcl_loss(Rec_model_a, Rec_model_b, modified_adj_a, modified_adj_b, batch_users, batch_pos)
 
             loss.backward()
             optimizer.step()
