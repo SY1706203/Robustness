@@ -120,8 +120,8 @@ def dcl_loss(recmodel_a, recmodel_b, modified_adj_a, modified_adj_b, users_, pos
 
 
 def dcl_train():
-    Rec_model_a, modified_adj_a = attack_model(Recmodel, adj, perturbations_a)
-    Rec_model_b, modified_adj_b = attack_model(Recmodel, adj, perturbations_b)
+    modified_adj_a, Rec_model_a = attack_model(Recmodel, adj, perturbations_a)
+    modified_adj_b, Rec_model_b = attack_model(Recmodel, adj, perturbations_b)
 
     Rec_model_a.train()
     Rec_model_b.train()
