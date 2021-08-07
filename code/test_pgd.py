@@ -129,7 +129,7 @@ def groc_loss_vec(recmodel, modified_adj_a, modified_adj_b, users_, poss):
     # sum the matrix up by row
     neg_contrastive_similarity = torch.sum(torch.exp(neg_contrastive_similarity_matrix) / recmodel.T, 1)
 
-    loss_vec = -torch.log(contrastive_similarity / contrastive_similarity + neg_contrastive_similarity)
+    loss_vec = -torch.log(contrastive_similarity / (contrastive_similarity + neg_contrastive_similarity))
 
     return loss_vec
 
