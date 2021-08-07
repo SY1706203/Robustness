@@ -41,6 +41,7 @@ if device != 'cpu':
 
 # TODO: move this param to parser
 train_groc = True
+train_cascade = False  # train original model first then train it with GROC loss
 
 adj = dataset.getSparseGraph()
 adj = torch.FloatTensor(adj.todense()).to(device)
@@ -59,14 +60,15 @@ Recmodel = Recmodel.to(device)
 
 num_users = Recmodel.num_users
 # adj=adj.to(device)
-print("training original model...")
-Recmodel.fit(adj, users, posItems, negItems)
-print("finished!")
+if train_cascade:
+    print("training original model...")
+    Recmodel.fit(adj, users, posItems, negItems)
+    print("finished!")
 
-print("original model performance:")
-print("===========================")
-Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
-print("===========================")
+    print("original model performance:")
+    print("===========================")
+    Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
+    print("===========================")
 # Setup Attack Model
 
 
@@ -156,9 +158,14 @@ def groc_train(train_groc_, ori_model):
         users_, posItems_, negItems_ = utils.shuffle(users_, posItems_, negItems_)
         total_batch = len(users) // 2048 + 1
         aver_loss = 0.
-        for (batch_i, (batch_users, batch_pos, _)) \
+        for (batch_i, (batch_users, batch_pos, batch_neg)) \
                 in enumerate(utils.minibatch(users_, posItems_, negItems_, batch_size=2048)):
-            loss = groc_loss(ori_model, modified_adj_a, modified_adj_b, batch_users, batch_pos)
+            if train_cascade:
+                loss = groc_loss(ori_model, modified_adj_a, modified_adj_b, batch_users, batch_pos)
+            else:
+                bpr_loss, reg_loss = ori_model.bpr_loss(adj, batch_users, batch_pos, batch_neg)
+                reg_loss = reg_loss * ori_model.weight_decay
+                loss = bpr_loss + reg_loss + groc_loss(ori_model, modified_adj_a, modified_adj_b, batch_users, batch_pos)
 
             loss.backward()
             optimizer.step()
@@ -168,15 +175,33 @@ def groc_train(train_groc_, ori_model):
         if i % 10 == 0:
             print("GROC Loss: ", aver_loss)
 
+        return modified_adj_a, modified_adj_b
+
 
 # TODO: optimize the code in right file!
 
 if train_groc:
-    groc_train(train_groc, Recmodel)
-    print("original model performance after GROC learning:")
-    print("===========================")
-    Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
-    print("===========================")
+    modified_adj_a, modified_adj_b = groc_train(train_groc, Recmodel)
+    if train_cascade:
+        print("original model performance after GROC learning:")
+        print("===========================")
+        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
+        print("===========================")
+    else:
+        print("original model performance after GROC learning on original adjacency matrix:")
+        print("===========================")
+        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
+        print("===========================")
+
+        print("original model performance after GROC learning on modified adjacency matrix A:")
+        print("===========================")
+        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_a), None, 0)
+        print("===========================")
+
+        print("original model performance after GROC learning on  modified adjacency matrix B:")
+        print("===========================")
+        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_b), None, 0)
+        print("===========================")
 else:
     _ = attack_model(Recmodel, adj, perturbations_a, train_groc)
 
