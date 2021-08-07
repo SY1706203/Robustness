@@ -59,7 +59,10 @@ Recmodel = Recmodel.to(device)
 
 num_users = Recmodel.num_users
 # adj=adj.to(device)
+print("training original model...")
 Recmodel.fit(adj, users, posItems, negItems)
+print("finished!")
+
 print("original model performance:")
 print("===========================")
 Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
@@ -71,7 +74,7 @@ def attack_model(recmodel, adj_matrix, perturbations, train_groc_):
     model = PGDAttack(model=recmodel, nnodes=adj_matrix.shape[0], loss_type='CE', device=device)
 
     model = model.to(device)
-
+    print("attack light-GCN model")
     model.attack(adj_matrix, perturbations, users, posItems, negItems, num_users)
 
     modified_adj = model.modified_adj
@@ -80,8 +83,9 @@ def attack_model(recmodel, adj_matrix, perturbations, train_groc_):
     Recmodel_ = lightgcn.LightGCN(device)
     Recmodel_ = Recmodel_.to(device)
     # adj=adj.to(device)
-    print("train the model with modified adjacency matrix")
+
     if not train_groc_:
+        print("train the model with modified adjacency matrix")
         Recmodel_.fit(modified_adj, users, posItems, negItems)
 
         Procedure.Test(dataset, Recmodel_, 1, utils.normalize_adj_tensor(modified_adj), None, 0)
