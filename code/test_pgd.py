@@ -80,11 +80,11 @@ def attack_model(recmodel, adj_matrix, perturbations, train_groc_):
     modified_adj = model.modified_adj
     print("modified adjacency is same as original adjacency: ", (modified_adj == adj_matrix).all())
 
-    Recmodel_ = lightgcn.LightGCN(device)
-    Recmodel_ = Recmodel_.to(device)
     # adj=adj.to(device)
 
     if not train_groc_:
+        Recmodel_ = lightgcn.LightGCN(device)
+        Recmodel_ = Recmodel_.to(device)
         print("train the model with modified adjacency matrix")
         Recmodel_.fit(modified_adj, users, posItems, negItems)
 
@@ -142,8 +142,8 @@ def groc_loss(ori_model, modified_adj_a, modified_adj_b, users_, poss):
 
 
 def groc_train(train_groc_, ori_model):
-    modified_adj_a = attack_model(Recmodel, adj, perturbations_a, train_groc_)
-    modified_adj_b = attack_model(Recmodel, adj, perturbations_b, train_groc_)
+    modified_adj_a = attack_model(ori_model, adj, perturbations_a, train_groc_)
+    modified_adj_b = attack_model(ori_model, adj, perturbations_b, train_groc_)
 
     ori_model.train()
 
