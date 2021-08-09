@@ -170,7 +170,7 @@ def groc_train(train_groc_, ori_model):
         if i % 10 == 0:
             print("GROC Loss: ", aver_loss)
 
-        return modified_adj_a, modified_adj_b
+    return modified_adj_a, modified_adj_b
 
 
 # TODO: optimize the code in right file!
