@@ -94,12 +94,9 @@ def attack_model(recmodel, adj_matrix, perturbations, train_groc_):
     return modified_adj
 
 
-def get_embed_groc(recmodel, modified_adj, users_, poss, mlp):
+def get_embed_groc(recmodel, modified_adj, users_, poss):
     (users_emb, pos_emb, _, _) = recmodel.getEmbedding(modified_adj, users_.long(), poss.long())
     # pos_emb_old=pos_emb
-
-    users_emb = mlp(users_emb)
-    pos_emb = mlp(pos_emb)
 
     users_emb = nn.functional.normalize(users_emb, dim=1)
     pos_emb = nn.functional.normalize(pos_emb, dim=1)
@@ -108,10 +105,8 @@ def get_embed_groc(recmodel, modified_adj, users_, poss, mlp):
 
 
 def groc_loss_vec(recmodel, modified_adj_a, modified_adj_b, users_, poss):
-    mlp = utils.MLP(64, 64)
-    mlp = mlp.to(device)
-    all_emb_a = get_embed_groc(recmodel, modified_adj_a, users_, poss, mlp)
-    all_emb_b = get_embed_groc(recmodel, modified_adj_b, users_, poss, mlp)
+    all_emb_a = get_embed_groc(recmodel, modified_adj_a, users_, poss)
+    all_emb_b = get_embed_groc(recmodel, modified_adj_b, users_, poss)
 
     contrastive_similarity = torch.exp(torch.diag(torch.matmul(all_emb_a, all_emb_b.t().contiguous())) / recmodel.T)
     # contrastive_similarity size： [batch_size,]
