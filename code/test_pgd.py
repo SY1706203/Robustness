@@ -42,6 +42,7 @@ if device != 'cpu':
 # TODO: move this param to parser
 train_groc = True
 train_cascade = False  # train original model first then train it with GROC loss
+valid_perturbation = True
 
 adj = dataset.getSparseGraph()
 adj = torch.FloatTensor(adj.todense()).to(device)
@@ -60,7 +61,7 @@ Recmodel = Recmodel.to(device)
 
 num_users = Recmodel.num_users
 # adj=adj.to(device)
-if train_cascade:
+if train_cascade or valid_perturbation:
     print("training original model...")
     Recmodel.fit(adj, users, posItems, negItems)
     print("finished!")
