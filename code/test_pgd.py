@@ -25,6 +25,12 @@ parser.add_argument('--hidden', type=int, default=16,
                     help='Number of hidden units.')
 parser.add_argument('--dropout', type=float, default=0.5,
                     help='Dropout rate (1-keep probability).')
+parser.add_argument('--train_groc', type=bool, default=False,
+                    help='control if train the groc')
+parser.add_argument('--train_cascade', type=bool, default=False,
+                    help='train original model first then train model with GROC loss')
+parser.add_argument('--valid_perturbation', type=bool, default=True,
+                    help='perturbation validation')
 parser.add_argument('--dataset', type=str, default='citeseer', choices=['MOOC'],
                     help='dataset')
 parser.add_argument('--ptb_rate', type=float, default=0.5, help='perturbation rate')
@@ -38,11 +44,6 @@ np.random.seed(args.seed)
 torch.manual_seed(args.seed)
 if device != 'cpu':
     torch.cuda.manual_seed(args.seed)
-
-# TODO: move this param to parser
-train_groc = False
-train_cascade = False  # train original model first then train it with GROC loss
-valid_perturbation = True
 
 adj = dataset.getSparseGraph()
 adj = torch.FloatTensor(adj.todense()).to(device)
@@ -61,7 +62,7 @@ Recmodel = Recmodel.to(device)
 
 num_users = Recmodel.num_users
 # adj=adj.to(device)
-if train_cascade or valid_perturbation:
+if args.train_cascade or args.valid_perturbation:
     print("training original model...")
     Recmodel.fit(adj, users, posItems, negItems)
     print("finished!")
@@ -99,7 +100,7 @@ def attack_model(recmodel, adj_matrix, perturbations, train_groc_):
         Recmodel_.fit(modified_adj, users, posItems, negItems)
         print("evaluate the model with modified adjacency matrix")
         Procedure.Test(dataset, Recmodel_, 1, utils.normalize_adj_tensor(modified_adj), None, 0)
-        if valid_perturbation:
+        if args.valid_perturbation:
             print("evaluate the original model with modified adjacency matrix")
             Procedure.Test(dataset, Recmodel, 1, utils.normalize_adj_tensor(modified_adj), None, 0)
     return modified_adj
@@ -168,7 +169,7 @@ def groc_train(train_groc_, ori_model):
         aver_loss = 0.
         for (batch_i, (batch_users, batch_pos, batch_neg)) \
                 in enumerate(utils.minibatch(users_, posItems_, negItems_, batch_size=2048)):
-            if train_cascade:
+            if args.train_cascade:
                 loss = groc_loss(ori_model, modified_adj_a, modified_adj_b, batch_users, batch_pos)
             else:
                 bpr_loss, reg_loss = ori_model.bpr_loss(adj, batch_users, batch_pos, batch_neg)
@@ -188,9 +189,9 @@ def groc_train(train_groc_, ori_model):
 
 # TODO: optimize the code in right file!
 
-if train_groc:
-    modified_adj_a, modified_adj_b = groc_train(train_groc, Recmodel)
-    if train_cascade:
+if args.train_groc:
+    modified_adj_a, modified_adj_b = groc_train(args.train_groc, Recmodel)
+    if args.train_cascade:
         print("original model performance after GROC learning:")
         print("===========================")
         Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
@@ -211,6 +212,6 @@ if train_groc:
         Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_b), None, 0)
         print("===========================")
 else:
-    _ = attack_model(Recmodel, adj, perturbations_a, train_groc)
+    _ = attack_model(Recmodel, adj, perturbations_a, args.train_groc)
 
 
