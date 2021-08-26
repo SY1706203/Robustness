@@ -82,7 +82,7 @@ def attack_model(recmodel, adj_matrix, perturbations, train_groc_):
 
     modified_adj = model.modified_adj
     print("modified adjacency is same as original adjacency: ", (modified_adj == adj_matrix).all())
-    print("{} edges are modified in modified adj matrix.".format((modified_adj == adj_matrix).sum().detach().numpy()))
+    print("{} edges are modified in modified adj matrix.".format((modified_adj == adj_matrix).sum().detach().cpu().numpy()))
 
     # adj=adj.to(device)
 
