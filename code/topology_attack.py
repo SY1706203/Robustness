@@ -90,8 +90,6 @@ class PGDAttack(BaseAttack):
                 if sampled.sum() > perturbations:
                     continue
                 self.adj_changes.data.copy_(torch.tensor(sampled))
-                modified_adj = self.get_modified_adj(ori_adj, num_users)
-                adj_norm = utils.normalize_adj_tensor(modified_adj)
 
                 users = users.to(self.device)
                 posItems = posItems.to(self.device)
@@ -100,6 +98,8 @@ class PGDAttack(BaseAttack):
 
                 modified_adj = self.get_modified_adj(ori_adj, num_users)
                 adj_norm = utils.normalize_adj_tensor(modified_adj)
+
+                loss_total = 0.
 
                 for (batch_i,
                      (batch_users,
@@ -111,9 +111,11 @@ class PGDAttack(BaseAttack):
                     loss, reg_loss = victim_model.bpr_loss(adj_norm, batch_users, batch_pos, batch_neg)
 
                     # print(loss)
-                    if best_loss < loss:
-                        best_loss = loss
-                        best_s = sampled
+                    loss_total += loss
+
+                if best_loss < loss_total:
+                    best_loss = loss_total
+                    best_s = sampled
             self.adj_changes.data.copy_(torch.tensor(best_s))
 
     def _loss(self, output, labels):

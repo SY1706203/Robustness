@@ -40,7 +40,7 @@ if device != 'cpu':
     torch.cuda.manual_seed(args.seed)
 
 # TODO: move this param to parser
-train_groc = True
+train_groc = False
 train_cascade = False  # train original model first then train it with GROC loss
 valid_perturbation = True
 
@@ -90,8 +90,11 @@ def attack_model(recmodel, adj_matrix, perturbations, train_groc_):
         Recmodel_ = Recmodel_.to(device)
         print("train the model with modified adjacency matrix")
         Recmodel_.fit(modified_adj, users, posItems, negItems)
-
+        print("evaluate the model with modified adjacency matrix")
         Procedure.Test(dataset, Recmodel_, 1, utils.normalize_adj_tensor(modified_adj), None, 0)
+        if valid_perturbation:
+            print("evaluate the original model with modified adjacency matrix")
+            Procedure.Test(dataset, Recmodel, 1, utils.normalize_adj_tensor(modified_adj), None, 0)
     return modified_adj
 
 
