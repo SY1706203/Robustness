@@ -82,6 +82,7 @@ def attack_model(recmodel, adj_matrix, perturbations, train_groc_):
 
     modified_adj = model.modified_adj
     print("modified adjacency is same as original adjacency: ", (modified_adj == adj_matrix).all())
+    print("{} edges are modified in modified adj matrix.".format((modified_adj == adj_matrix).sum().detach().numpy()))
 
     # adj=adj.to(device)
 
@@ -145,6 +146,8 @@ def groc_loss(ori_model, modified_adj_a, modified_adj_b, users_, poss):
 def groc_train(train_groc_, ori_model):
     modified_adj_a = attack_model(ori_model, adj, perturbations_a, train_groc_)
     modified_adj_b = attack_model(ori_model, adj, perturbations_b, train_groc_)
+
+    print("modified adjacency matrix are same:", (modified_adj_a == modified_adj_b).all())
 
     ori_model.train()
 

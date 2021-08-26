@@ -66,13 +66,13 @@ class PGDAttack(BaseAttack):
                 # output=victim_model(adj_norm, users, posItems)
                 # loss, reg_loss=victim_model.bpr_loss(adj_norm, users, posItems, negItems)
 
-            adj_grad = torch.autograd.grad(loss, self.adj_changes)[0]
+                adj_grad = torch.autograd.grad(loss, self.adj_changes)[0]
 
-            # lr=200/np.sqrt(t+1)
-            lr = 0.2
-            self.adj_changes.data.add_(lr * adj_grad)
+                # lr=200/np.sqrt(t+1)
+                lr = 0.2
+                self.adj_changes.data.add_(lr * adj_grad)
 
-            self.projection(perturbations)
+                self.projection(perturbations)
 
         self.random_sample(ori_adj, perturbations, users, posItems, negItems, num_users)
         self.modified_adj = self.get_modified_adj(ori_adj, num_users).detach()
