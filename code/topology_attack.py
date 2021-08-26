@@ -152,6 +152,11 @@ class PGDAttack(BaseAttack):
         modified_adj[:num_users, :num_users] = 0
         modified_adj[num_users:, num_users:] = 0
 
+        # set diagonal to 0
+        adj_diag = torch.diag(modified_adj)
+        adj_diag_matrix = torch.diag_embed(adj_diag)
+        modified_adj = modified_adj - adj_diag_matrix
+
         return modified_adj
 
     def bisection(self, a, b, perturbations, epsilon):
