@@ -11,6 +11,7 @@ from model import PairWiseModel
 from sklearn.metrics import roc_auc_score
 import random
 import os
+from transformers import get_linear_schedule_with_warmup
 
 
 def tensor2onehot(labels):
@@ -333,6 +334,14 @@ def getLabel(test_data, pred_data):
         pred = np.array(pred).astype("float")
         r.append(pred)
     return np.array(r).astype('float')
+
+
+def scheduler_groc(optimizer, data_len, warmup_steps, n_batch, n_epochs):
+    num_training_steps = int(data_len / n_batch * n_epochs)
+    scheduler_ = get_linear_schedule_with_warmup(
+        optimizer, num_warmup_steps=warmup_steps, num_training_steps=num_training_steps
+    )
+    return scheduler_
 
 
 # ====================end Metrics=============================

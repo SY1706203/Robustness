@@ -12,9 +12,12 @@ import Procedure
 import utils
 import lightgcn
 import Procedure
+from utils import scheduler_groc
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed', type=int, default=15, help='Random seed.')
+parser.add_argument('--warmup_steps', type=int, default=100000, help='Warm up steps for scheduler.')
+parser.add_argument('--batch_size', type=int, default=2048, help='BS.')
 parser.add_argument('--epochs', type=int, default=200,
                     help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=0.01,
@@ -55,7 +58,7 @@ print("two perturbations are same: ", perturbations_a == perturbations_b)
 
 
 users, posItems, negItems = utils.getTrainSet(dataset)
-
+data_len = len(users)
 # Setup Victim Model
 Recmodel = lightgcn.LightGCN(device)
 Recmodel = Recmodel.to(device)
@@ -150,7 +153,7 @@ def groc_loss(ori_model, modified_adj_a, modified_adj_b, users_, poss):
     return torch.sum(torch.add(loss_vec_a, loss_vec_b)) / (2 * loss_vec_a.size(0))
 
 
-def groc_train(train_groc_, ori_model):
+def groc_train(train_groc_, ori_model, data_len_):
     modified_adj_a = attack_model(ori_model, adj, perturbations_a, train_groc_)
     modified_adj_b = attack_model(ori_model, adj, perturbations_b, train_groc_)
 
@@ -159,16 +162,19 @@ def groc_train(train_groc_, ori_model):
     ori_model.train()
 
     optimizer = optim.Adam(ori_model.parameters(), lr=ori_model.lr, weight_decay=ori_model.weight_decay)
-    for i in range(100):
+
+    total_batch = len(users) // args.batch_size + 1
+    scheduler = scheduler_groc(optimizer, data_len_, args.warmup_steps, total_batch, args.epochs)
+
+    for i in range(args.epochs):
         optimizer.zero_grad()
         users_ = users.to(ori_model.device)
         posItems_ = posItems.to(ori_model.device)
         negItems_ = negItems.to(ori_model.device)
         users_, posItems_, negItems_ = utils.shuffle(users_, posItems_, negItems_)
-        total_batch = len(users) // 2048 + 1
         aver_loss = 0.
         for (batch_i, (batch_users, batch_pos, batch_neg)) \
-                in enumerate(utils.minibatch(users_, posItems_, negItems_, batch_size=2048)):
+                in enumerate(utils.minibatch(users_, posItems_, negItems_, batch_size=args.batch_size)):
             if args.train_cascade:
                 loss = groc_loss(ori_model, modified_adj_a, modified_adj_b, batch_users, batch_pos)
             else:
@@ -178,6 +184,7 @@ def groc_train(train_groc_, ori_model):
 
             loss.backward()
             optimizer.step()
+            scheduler.step()
 
             aver_loss += loss.cpu().item()
         aver_loss = aver_loss / total_batch
@@ -190,7 +197,7 @@ def groc_train(train_groc_, ori_model):
 # TODO: optimize the code in right file!
 
 if args.train_groc:
-    modified_adj_a, modified_adj_b = groc_train(args.train_groc, Recmodel)
+    modified_adj_a, modified_adj_b = groc_train(args.train_groc, Recmodel, data_len)
     if args.train_cascade:
         print("original model performance after GROC learning:")
         print("===========================")
