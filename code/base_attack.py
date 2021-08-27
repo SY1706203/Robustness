@@ -25,7 +25,7 @@ class BaseAttack(Module):
             self.hidden_sizes=model.hidden_sizes
         '''
 
-    def attack(self, ori_adj, perturbations, users, posItems, negItems, num_users):
+    def attack(self, ori_adj, perturbations, users, posItems, negItems, num_users, path, flag):
         pass
 
     @staticmethod

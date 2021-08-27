@@ -13,6 +13,7 @@ import utils
 import lightgcn
 import Procedure
 from utils import scheduler_groc
+import os
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed', type=int, default=15, help='Random seed.')
@@ -32,12 +33,21 @@ parser.add_argument('--train_groc', type=bool, default=False,
                     help='control if train the groc')
 parser.add_argument('--train_cascade', type=bool, default=False,
                     help='train original model first then train model with GROC loss')
+parser.add_argument('--use_saved_modified_adj', type=bool, default=False,
+                    help='prevent attacking the adj matrix if the modified matrix is fine-tuned. Note: if u change'
+                         'any parameter for attacking the adj_matrix, you must set this param to False.')
 parser.add_argument('--valid_perturbation', type=bool, default=True,
                     help='perturbation validation')
 parser.add_argument('--dataset', type=str, default='citeseer', choices=['MOOC'],
                     help='dataset')
 parser.add_argument('--ptb_rate', type=float, default=0.5, help='perturbation rate')
 parser.add_argument('--model', type=str, default='PGD', choices=['PGD', 'min-max'], help='model variant')
+parser.add_argument('--path_modified_adj', type=str,
+                    default=os.path.abspath(os.path.dirname(os.path.dirname(__file__))) + '/data/modified_adj_{}.pt',
+                    help='path where modified adj matrix are saved')
+parser.add_argument('--modified_adj_flag', type=list, default=['a', 'b'],
+                    help='we attack adj twice for GROC training so we will have 2 modified adj matrix. In order to '
+                         'distinguish them we set a flag to save them independently')
 
 args = parser.parse_args()
 
@@ -77,14 +87,16 @@ if args.train_cascade or args.valid_perturbation:
 # Setup Attack Model
 
 
-def attack_model(recmodel, adj_matrix, perturbations, train_groc_):
+def attack_model(recmodel, adj_matrix, perturbations, train_groc_, path, flag):
     model = PGDAttack(model=recmodel, nnodes=adj_matrix.shape[0], loss_type='CE', device=device)
 
     model = model.to(device)
     print("attack light-GCN model")
-    model.attack(adj_matrix, perturbations, users, posItems, negItems, num_users)
-
-    modified_adj = model.modified_adj
+    if not args.use_saved_modified_adj:
+        model.attack(adj_matrix, perturbations, users, posItems, negItems, num_users, path, flag)
+        modified_adj = model.modified_adj
+    else:
+        modified_adj = torch.load(path.format(flag))
     print("modified adjacency is same as original adjacency: ", (modified_adj == adj_matrix).all())
     print("{} edges are in the adjacancy matrix".format(adj_matrix.sum()))
     print("{} edges are in the modified adjacancy matrix".format(modified_adj.sum()))
@@ -154,8 +166,10 @@ def groc_loss(ori_model, modified_adj_a, modified_adj_b, users_, poss):
 
 
 def groc_train(train_groc_, ori_model, data_len_):
-    modified_adj_a = attack_model(ori_model, adj, perturbations_a, train_groc_)
-    modified_adj_b = attack_model(ori_model, adj, perturbations_b, train_groc_)
+    modified_adj_a = attack_model(ori_model, adj, perturbations_a, train_groc_, args.path_modified_adj,
+                                  args.modified_adj_flag[0])
+    modified_adj_b = attack_model(ori_model, adj, perturbations_b, train_groc_, args.path_modified_adj,
+                                  args.modified_adj_flag[1])
 
     print("modified adjacency matrix are same:", (modified_adj_a == modified_adj_b).all())
 
@@ -219,6 +233,6 @@ if args.train_groc:
         Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_b), None, 0)
         print("===========================")
 else:
-    _ = attack_model(Recmodel, adj, perturbations_a, args.train_groc)
+    _ = attack_model(Recmodel, adj, perturbations_a, args.train_groc, args.path_modified_adj, args.modified_adj_flag[0])
 
 
