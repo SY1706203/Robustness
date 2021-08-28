@@ -189,7 +189,7 @@ class MinMax(PGDAttack):
 
         # self.sparse_features=sp.issparse(ori_features)
         # ori_adj,ori_features,labels=utils.to_tensor(ori_adj,ori_features,labels,device=self.device)
-        ori_adj = utils.to_tensor(ori_adj.cpu(), device=self.device)
+        ori_adj = to_tensor(ori_adj.cpu(), device=self.device)
 
         optimizer = optim.Adam(victim_model.parameters(), lr=0.01)
 

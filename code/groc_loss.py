@@ -1,0 +1,104 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from utils import scheduler_groc
+import utils
+import torch.nn.functional as F
+from utils_attack import attack_model
+
+
+class GROC_loss:
+    def __init__(self, ori_model, args, users, posItems, negItems):
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.ori_model = ori_model
+        self.args = args
+        self.users = users
+        self.posItems = posItems
+        self.negItems = negItems
+
+    def get_embed_groc(self, modified_adj, users_, poss):
+        (users_emb, pos_emb, _, _) = self.ori_model.getEmbedding(modified_adj, users_.long(), poss.long())
+
+        users_emb = nn.functional.normalize(users_emb, dim=1)
+        pos_emb = nn.functional.normalize(pos_emb, dim=1)
+
+        return torch.cat([users_emb, pos_emb])
+
+    def groc_loss_vec(self, modified_adj_a, modified_adj_b, users_, poss):
+        all_emb_a = self.get_embed_groc(modified_adj_a, users_, poss)
+        all_emb_b = self.get_embed_groc(modified_adj_b, users_, poss)
+
+        contrastive_similarity = torch.exp(torch.diag(torch.matmul(all_emb_a, all_emb_b.t().contiguous())) /
+                                           self.args.T_groc)
+        # contrastive_similarity size： [batch_size,]
+        self_neg_similarity_matrix = torch.matmul(all_emb_a, all_emb_a.t().contiguous())  # z1 * z1
+        contrastive_neg_similarity_matrix = torch.matmul(all_emb_a, all_emb_b.t().contiguous())  # z1 * z2
+        # self_neg_contrastive_similarity_matrix size： [batch_size, batch_size]
+
+        # mask diagonal
+        mask = torch.eye(all_emb_b.size(0), all_emb_b.size(0)).bool().to(self.device)
+        # tensor mask with diagonal all True others all False
+        self_neg_similarity_matrix.masked_fill_(mask, 0)
+        contrastive_neg_similarity_matrix.masked_fill_(mask, 0)
+        # concatenates z1 * z1 with 0-diagonal and z1 * z2 with 0-diagonal in row
+        # we mask 2 diagonal out because we don't want to get the similarity of an embedding with itself
+        neg_contrastive_similarity_matrix = \
+            torch.cat([self_neg_similarity_matrix, contrastive_neg_similarity_matrix], -1)
+        # sum the matrix up by row
+        neg_contrastive_similarity = torch.sum(torch.exp(neg_contrastive_similarity_matrix) / self.args.T_groc, 1)
+
+        loss_vec = -torch.log(contrastive_similarity / (contrastive_similarity + neg_contrastive_similarity))
+
+        return loss_vec
+
+    def groc_loss(self, modified_adj_a, modified_adj_b, users_, poss):
+        loss_vec_a = self.groc_loss_vec(modified_adj_a, modified_adj_b, users_, poss)
+        loss_vec_b = self.groc_loss_vec(modified_adj_b, modified_adj_a, users_, poss)
+
+        return torch.sum(torch.add(loss_vec_a, loss_vec_b)) / (2 * loss_vec_a.size(0))
+
+    def groc_train(self, data_len_, adj, perturbations_a, perturbations_b, users):
+        modified_adj_a = attack_model(self.ori_model, adj, perturbations_a, self.args.path_modified_adj,
+                                      self.args.modified_adj_flag[0], self.users, self.posItems, self.negItems,
+                                      self.ori_model.num_users, self.args.use_saved_modified_adj, self.device)
+
+        modified_adj_b = attack_model(self.ori_model, adj, perturbations_b, self.args.path_modified_adj,
+                                      self.args.modified_adj_flag[1], self.users, self.posItems, self.negItems,
+                                      self.ori_model.num_users, self.args.use_saved_modified_adj, self.device)
+
+        print("modified adjacency matrix are same:", (modified_adj_a == modified_adj_b).all())
+
+        self.ori_model.train()
+
+        optimizer = optim.Adam(self.ori_model.parameters(), lr=self.ori_model.lr,
+                               weight_decay=self.ori_model.weight_decay)
+
+        total_batch = len(users) // self.args.batch_size + 1
+        scheduler = scheduler_groc(optimizer, data_len_, self.args.warmup_steps, total_batch, self.args.epochs)
+
+        for i in range(self.args.epochs):
+            optimizer.zero_grad()
+            users_ = users.to(self.device)
+            posItems_ = self.posItems.to(self.device)
+            negItems_ = self.negItems.to(self.device)
+            users_, posItems_, negItems_ = utils.shuffle(users_, posItems_, negItems_)
+            aver_loss = 0.
+            for (batch_i, (batch_users, batch_pos, batch_neg)) \
+                    in enumerate(utils.minibatch(users_, posItems_, negItems_, batch_size=self.args.batch_size)):
+                if self.args.train_cascade:
+                    loss = self.groc_loss(modified_adj_a, modified_adj_b, batch_users, batch_pos)
+                else:
+                    bpr_loss, reg_loss = self.ori_model.bpr_loss(adj, batch_users, batch_pos, batch_neg)
+                    reg_loss = reg_loss * self.ori_model.weight_decay
+                    loss = bpr_loss + reg_loss + self.groc_loss(modified_adj_a, modified_adj_b, batch_users, batch_pos)
+
+                loss.backward()
+                optimizer.step()
+                scheduler.step()
+
+                aver_loss += loss.cpu().item()
+            aver_loss = aver_loss / total_batch
+            if i % 10 == 0:
+                print("GROC Loss: ", aver_loss)
+
+        return modified_adj_a, modified_adj_b
