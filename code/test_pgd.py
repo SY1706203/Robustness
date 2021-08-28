@@ -97,14 +97,18 @@ def attack_model(recmodel, adj_matrix, perturbations, train_groc_, path, flag):
         modified_adj = model.modified_adj
     else:
         modified_adj = torch.load(path.format(flag))
+        modified_adj = modified_adj.to(device)
     print("modified adjacency is same as original adjacency: ", (modified_adj == adj_matrix).all())
     print("{} edges are in the adjacancy matrix".format(adj_matrix.sum()))
     print("{} edges are in the modified adjacancy matrix".format(modified_adj.sum()))
-    print("{} edges are modified in modified adj matrix.".format((modified_adj != adj_matrix).sum().detach().cpu().numpy()))
+    print("{} edges are modified in modified adj matrix.".format((modified_adj != adj_matrix).sum().
+                                                                 detach().cpu().numpy()))
     print("{} edges are modified in upper triangular matrix of modified adj.".
-          format((torch.triu(modified_adj, diagonal=1) != torch.triu(adj_matrix, diagonal=1)).sum().detach().cpu().numpy()))
+          format((torch.triu(modified_adj, diagonal=1) != torch.triu(adj_matrix, diagonal=1)).sum().
+                 detach().cpu().numpy()))
     print("{} edges are modified in lower triangular matrix of modified adj.".
-          format((torch.tril(modified_adj, diagonal=-1) != torch.tril(adj_matrix, diagonal=-1)).sum().detach().cpu().numpy()))
+          format((torch.tril(modified_adj, diagonal=-1) != torch.tril(adj_matrix, diagonal=-1)).sum().
+                 detach().cpu().numpy()))
 
     # adj=adj.to(device)
 
