@@ -1,14 +1,14 @@
 from topology_attack import PGDAttack
 import torch
+import os
 
 
-def attack_model(recmodel, adj_matrix, perturbations, path, flag, users, posItems, negItems, num_users,
-                 use_saved_modified_adj, device):
+def attack_model(recmodel, adj_matrix, perturbations, path, flag, users, posItems, negItems, num_users, device):
     model = PGDAttack(model=recmodel, nnodes=adj_matrix.shape[0], loss_type='CE', device=device)
 
     model = model.to(device)
     print("attack light-GCN model")
-    if not use_saved_modified_adj:
+    if not os.path.exists(path.format(flag)):
         model.attack(adj_matrix, perturbations, users, posItems, negItems, num_users, path, flag)
         modified_adj = model.modified_adj
     else:

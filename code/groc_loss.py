@@ -60,11 +60,11 @@ class GROC_loss:
     def groc_train(self, data_len_, adj, perturbations_a, perturbations_b, users):
         modified_adj_a = attack_model(self.ori_model, adj, perturbations_a, self.args.path_modified_adj,
                                       self.args.modified_adj_flag[0], self.users, self.posItems, self.negItems,
-                                      self.ori_model.num_users, self.args.use_saved_modified_adj, self.device)
+                                      self.ori_model.num_users, self.device)
 
         modified_adj_b = attack_model(self.ori_model, adj, perturbations_b, self.args.path_modified_adj,
                                       self.args.modified_adj_flag[1], self.users, self.posItems, self.negItems,
-                                      self.ori_model.num_users, self.args.use_saved_modified_adj, self.device)
+                                      self.ori_model.num_users, self.device)
 
         print("modified adjacency matrix are same:", (modified_adj_a == modified_adj_b).all())
 

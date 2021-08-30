@@ -20,13 +20,13 @@ parser.add_argument('--weight_decay', type=float, default=5e-4, help='Weight dec
 parser.add_argument('--hidden', type=int, default=16, help='Number of hidden units.')
 parser.add_argument('--dropout', type=float, default=0.5, help='Dropout rate (1-keep probability).')
 parser.add_argument('--train_groc', type=bool, default=False, help='control if train the groc')
-parser.add_argument('--pdg_attack', type=bool, default=False, help='PDG attack and evaluate')
-parser.add_argument('--random_perturb', type=bool, default=True, help='perturb adj randomly and compare to PGD')
+parser.add_argument('--pdg_attack', type=bool, default=True, help='PDG attack and evaluate')
+parser.add_argument('--random_perturb', type=bool, default=False, help='perturb adj randomly and compare to PGD')
 parser.add_argument('--dataset', type=str, default='citeseer', choices=['MOOC'], help='dataset')
 parser.add_argument('--T_groc', type=int, default=0.7,  help='param temperature for GROC')
 parser.add_argument('--ptb_rate', type=float, default=0.5, help='perturbation rate')
 parser.add_argument('--model', type=str, default='PGD', choices=['PGD', 'min-max'], help='model variant')
-parser.add_argument('--valid_perturbation', type=bool, default=False, help='perturbation validation')
+parser.add_argument('--valid_perturbation', type=bool, default=True, help='perturbation validation')
 parser.add_argument('--train_cascade', type=bool, default=False,
                     help='train original model first then train model with GROC loss')
 parser.add_argument('--path_modified_adj', type=str,
@@ -111,7 +111,7 @@ if args.train_groc:
 
 if args.pdg_attack:
     # Setup Attack Model
-    adj_dir = args.path_modified_adj.format(args.modified_adj_flag)
+    adj_dir = args.path_modified_adj.format(args.modified_adj_flag[0])
     if os.path.exists(adj_dir):
         modified_adj = torch.load(adj_dir).to(device)
     else:
