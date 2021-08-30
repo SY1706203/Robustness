@@ -70,7 +70,7 @@ class PGDAttack(BaseAttack):
 
                 # lr=200/np.sqrt(t+1)
                 lr = 200 / np.sqrt(t + 1)
-                self.adj_changes.data.add_(lr * adj_grad.cpu().item())
+                self.adj_changes.data.add_(lr * adj_grad)
                 # print(self.adj_changes) used in perturbation 0.1 log
                 self.projection(perturbations)
 
