@@ -116,7 +116,7 @@ if args.pdg_attack:
         modified_adj = torch.load(adj_dir).to(device)
     else:
         modified_adj = attack_model(Recmodel, adj, perturbations_a, args.path_modified_adj, args.modified_adj_flag[0],
-                                    users, posItems, negItems, Recmodel.num_users, os.path.exists(adj_dir), device)
+                                    users, posItems, negItems, Recmodel.num_users, device)
     Recmodel_ = lightgcn.LightGCN(device)
     Recmodel_ = Recmodel_.to(device)
     print("train the model with modified adjacency matrix")
