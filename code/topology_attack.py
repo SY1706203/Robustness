@@ -69,7 +69,7 @@ class PGDAttack(BaseAttack):
                 adj_grad = torch.autograd.grad(loss, self.adj_changes, retain_graph=True)[0]
 
                 # lr=200/np.sqrt(t+1)
-                lr = 0.2
+                lr = 200 / np.sqrt(t + 1)
                 self.adj_changes.data.add_(lr * adj_grad)
                 # print(self.adj_changes) used in perturbation 0.1 log
                 self.projection(perturbations)
@@ -189,7 +189,7 @@ class MinMax(PGDAttack):
 
         # self.sparse_features=sp.issparse(ori_features)
         # ori_adj,ori_features,labels=utils.to_tensor(ori_adj,ori_features,labels,device=self.device)
-        ori_adj = to_tensor(ori_adj.cpu(), device=self.device)
+        ori_adj = utils.to_tensor(ori_adj.cpu(), device=self.device)
 
         optimizer = optim.Adam(victim_model.parameters(), lr=0.01)
 
