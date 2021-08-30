@@ -25,4 +25,33 @@ def attack_model(recmodel, adj_matrix, perturbations, path, flag, users, posItem
     print("{} edges are modified in lower triangular matrix of modified adj.".
           format((torch.tril(modified_adj, diagonal=-1) != torch.tril(adj_matrix, diagonal=-1)).sum().
                  detach().cpu().numpy()))
+    print("there are edges between user-user and item-item: ",
+          modified_adj[:num_users, :num_users].sum() + modified_adj[num_users:, num_users:].sum() > 0.5)
+    return modified_adj
+
+
+def attack_randomly(recmodel, adj_matrix, perturbations, path, flag, users, posItems, negItems, num_users,
+                    use_saved_modified_adj, device):
+    """
+    if use_saved_modified_adj:
+        pgd_adj = torch.load(path.format(flag))
+    else:
+        pgd_adj = attack_model(recmodel, adj_matrix, perturbations, path, flag, users, posItems, negItems, num_users,
+                               use_saved_modified_adj, device)
+    """
+
+    num_modified_edges = 186669  # (pgd_adj != adj_matrix).sum().detach().cpu().numpy() // 2
+    modification_mask = torch.FloatTensor(num_users, adj_matrix.size()[0] - num_users).uniform_() \
+                        <= num_modified_edges / (num_users * (adj_matrix.size()[0] - num_users))
+    modification_mask = modification_mask.to(device)
+    modified_adj = adj_matrix.detach().clone().bool().to(device)
+    modified_adj[:num_users, num_users:] = modified_adj[:num_users, num_users:] ^ modification_mask
+    modified_adj[num_users:, :num_users] = modified_adj[num_users:, :num_users] ^ modification_mask.T
+
+    modified_adj[num_users, num_users] = False
+
+    modified_adj = modified_adj.float()
+    print("{} edges are modified in modified adj matrix.: ".format((modified_adj != adj_matrix).sum().
+                                                                   detach().cpu().numpy()))
+
     return modified_adj
