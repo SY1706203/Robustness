@@ -41,7 +41,7 @@ class PGDAttack(BaseAttack):
         ori_adj = utils.to_tensor(ori_adj.cpu(), device=self.device)
 
         victim_model.eval()
-        epochs = 50
+        epochs = 200
         for t in tqdm(range(epochs)):
 
             users = users.to(self.device)
@@ -70,7 +70,7 @@ class PGDAttack(BaseAttack):
 
                 # lr=200/np.sqrt(t+1)
                 lr = 200 / np.sqrt(t + 1)
-                self.adj_changes.data.add_(lr * adj_grad)
+                self.adj_changes.data.add_(lr * adj_grad.cpu().item())
                 # print(self.adj_changes) used in perturbation 0.1 log
                 self.projection(perturbations)
 
@@ -113,7 +113,7 @@ class PGDAttack(BaseAttack):
                     loss, reg_loss = victim_model.bpr_loss(adj_norm, batch_users, batch_pos, batch_neg)
 
                     # print(loss)
-                    loss_total += loss
+                    loss_total += loss.cpu().item()
 
                 if best_loss < loss_total:
                     best_loss = loss_total
@@ -149,6 +149,7 @@ class PGDAttack(BaseAttack):
         tril_indices = torch.tril_indices(row=self.nnodes - 1, col=self.nnodes - 1, offset=0)
         m[tril_indices[0], tril_indices[1]] = self.adj_changes
         m = m + m.t()
+        print("----debug info")
         modified_adj = self.complementary * m + ori_adj
         # modified_adj=m+ori_adj
         modified_adj[:num_users, :num_users] = 0
