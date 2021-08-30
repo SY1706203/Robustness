@@ -29,9 +29,6 @@ parser.add_argument('--model', type=str, default='PGD', choices=['PGD', 'min-max
 parser.add_argument('--valid_perturbation', type=bool, default=False, help='perturbation validation')
 parser.add_argument('--train_cascade', type=bool, default=False,
                     help='train original model first then train model with GROC loss')
-parser.add_argument('--use_saved_modified_adj', type=bool, default=False,
-                    help='prevent attacking the adj matrix if the modified matrix is fine-tuned. Note: if u change'
-                         'any parameter for attacking the adj_matrix, you must set this param to False.')
 parser.add_argument('--path_modified_adj', type=str,
                     default=os.path.abspath(os.path.dirname(os.path.dirname(__file__))) + '/data/modified_adj_{}.pt',
                     help='path where modified adj matrix are saved')
@@ -67,7 +64,8 @@ num_users = Recmodel.num_users
 # adj=adj.to(device)
 if args.random_perturb:
     modified_adj = attack_randomly(Recmodel, adj, perturbations_a, args.path_modified_adj, args.modified_adj_flag[0],
-                                   users, posItems, negItems, Recmodel.num_users, args.use_saved_modified_adj, device)
+                                   users, posItems, negItems, Recmodel.num_users,
+                                   os.path.exists(args.path_modified_adj.format(args.modified_adj_flag)), device)
 
     print("training original model...")
     Recmodel.fit(adj, users, posItems, negItems)
@@ -118,7 +116,7 @@ if args.pdg_attack:
         modified_adj = torch.load(adj_dir).to(device)
     else:
         modified_adj = attack_model(Recmodel, adj, perturbations_a, args.path_modified_adj, args.modified_adj_flag[0],
-                                    users, posItems, negItems, Recmodel.num_users, args.use_saved_modified_adj, device)
+                                    users, posItems, negItems, Recmodel.num_users, os.path.exists(adj_dir), device)
     Recmodel_ = lightgcn.LightGCN(device)
     Recmodel_ = Recmodel_.to(device)
     print("train the model with modified adjacency matrix")
