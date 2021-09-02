@@ -32,15 +32,16 @@ def attack_model(recmodel, adj_matrix, perturbations, path, flag, users, posItem
 
 def attack_randomly(recmodel, adj_matrix, perturbations, path, flag, users, posItems, negItems, num_users,
                     use_saved_modified_adj, device):
-    """
+
     if use_saved_modified_adj:
+        print('load matrix from disc...')
         pgd_adj = torch.load(path.format(flag))
     else:
         pgd_adj = attack_model(recmodel, adj_matrix, perturbations, path, flag, users, posItems, negItems, num_users,
-                               use_saved_modified_adj, device)
-    """
+                               device)
 
-    num_modified_edges = 186669  # (pgd_adj != adj_matrix).sum().detach().cpu().numpy() // 2
+    num_modified_edges = (pgd_adj != adj_matrix).sum().detach().cpu().numpy() // 2
+    print("{} of edges are modified in low/upper triangular matrix from PGD".format(num_modified_edges))
     modification_mask = torch.FloatTensor(num_users, adj_matrix.size()[0] - num_users).uniform_() \
                         <= num_modified_edges / (num_users * (adj_matrix.size()[0] - num_users))
     modification_mask = modification_mask.to(device)
@@ -51,7 +52,7 @@ def attack_randomly(recmodel, adj_matrix, perturbations, path, flag, users, posI
     modified_adj[num_users, num_users] = False
 
     modified_adj = modified_adj.float()
-    print("{} edges are modified in modified adj matrix.: ".format((modified_adj != adj_matrix).sum().
+    print("{} edges are modified in randomly modified adj matrix.: ".format((modified_adj != adj_matrix).sum().
                                                                    detach().cpu().numpy()))
 
     return modified_adj
