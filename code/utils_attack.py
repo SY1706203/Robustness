@@ -26,7 +26,7 @@ def attack_model(recmodel, adj_matrix, perturbations, path, flag, users, posItem
     print("{} edges are modified in lower triangular matrix of modified adj.".
           format((torch.tril(modified_adj, diagonal=-1) != torch.tril(adj_matrix, diagonal=-1)).sum().
                  detach().cpu().numpy()))
-    print("there are edges between user-user and item-item: ",
+    print("there are edges between user-user and item-item in modified adj matrix: ",
           modified_adj[:num_users, :num_users].sum() + modified_adj[num_users:, num_users:].sum() > 0.5)
     return modified_adj
 

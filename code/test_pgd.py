@@ -68,6 +68,15 @@ if args.random_perturb:
     print("evaluate the original model with modified adjacency matrix")
     Procedure.Test(dataset, Recmodel, 1, normalize_adj_tensor(modified_adj), None, 0)
 
+    print("train a light GCN on the modified adjacency matrix")
+    Recmodel_ = lightgcn.LightGCN(device)
+    Recmodel_ = Recmodel_.to(device)
+    Recmodel_.fit(modified_adj, users, posItems, negItems)
+    print("evaluate the model with modified adjacency matrix")
+    Procedure.Test(dataset, Recmodel_, 1, normalize_adj_tensor(modified_adj), None, 0)
+    print("evaluate the model with modified adjacency matrix")
+    Procedure.Test(dataset, Recmodel, 1, normalize_adj_tensor(modified_adj), None, 0)
+
 if args.train_cascade or args.valid_perturbation:  # mostly used for validation
     print("training original model...")
     Recmodel.fit(adj, users, posItems, negItems)
