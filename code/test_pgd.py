@@ -59,8 +59,7 @@ num_users = Recmodel.num_users
 # adj=adj.to(device)
 if args.random_perturb:
     modified_adj = attack_randomly(Recmodel, adj, perturbations_a, args.path_modified_adj, args.modified_adj_flag[0],
-                                   users, posItems, negItems, Recmodel.num_users,
-                                   os.path.exists(args.path_modified_adj.format(args.modified_adj_flag)), device)
+                                   users, posItems, negItems, Recmodel.num_users, device)
 
     print("training original model...")
     Recmodel.fit(adj, users, posItems, negItems)

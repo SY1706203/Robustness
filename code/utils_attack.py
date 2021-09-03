@@ -12,6 +12,7 @@ def attack_model(recmodel, adj_matrix, perturbations, path, flag, users, posItem
         model.attack(adj_matrix, perturbations, users, posItems, negItems, num_users, path, flag)
         modified_adj = model.modified_adj
     else:
+        print('load matrix from disc...')
         modified_adj = torch.load(path.format(flag))
         modified_adj = modified_adj.to(device)
     print("modified adjacency is same as original adjacency: ", (modified_adj == adj_matrix).all())
@@ -30,15 +31,9 @@ def attack_model(recmodel, adj_matrix, perturbations, path, flag, users, posItem
     return modified_adj
 
 
-def attack_randomly(recmodel, adj_matrix, perturbations, path, flag, users, posItems, negItems, num_users,
-                    use_saved_modified_adj, device):
+def attack_randomly(recmodel, adj_matrix, perturbations, path, flag, users, posItems, negItems, num_users, device):
 
-    if use_saved_modified_adj:
-        print('load matrix from disc...')
-        pgd_adj = torch.load(path.format(flag))
-    else:
-        pgd_adj = attack_model(recmodel, adj_matrix, perturbations, path, flag, users, posItems, negItems, num_users,
-                               device)
+    pgd_adj = attack_model(recmodel, adj_matrix, perturbations, path, flag, users, posItems, negItems, num_users, device)
 
     num_modified_edges = (pgd_adj != adj_matrix).sum().detach().cpu().numpy() // 2
     print("{} of edges are modified in low/upper triangular matrix from PGD".format(num_modified_edges))
