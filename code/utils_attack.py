@@ -9,7 +9,9 @@ def attack_model(recmodel, adj_matrix, perturbations, path, ids, flag, users, po
 
     model = model.to(device)
     print("attack light-GCN model")
+    print('searching saved matrix from path {}...'.format(path.format(ids[flag])))
     if not os.path.exists(path.format(ids[flag])):
+        print('matrix doesn"t exist, attacking...')
         model.attack(adj_matrix, perturbations, users, posItems, negItems, num_users, path, ids, flag)
         modified_adj = model.modified_adj
     else:

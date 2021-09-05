@@ -123,7 +123,7 @@ class LightGCN(nn.Module):
         # out=torch.cat([users_emb,pos_emb],dim=0)
         # neg=torch.exp(torch.mm(out,out.t().contiguous())/self.T)
         neg = torch.exp(torch.mm(users_emb, pos_emb.t().contiguous()) / self.T)
-        mask = self.get_negative_mask_1(pos_emb.size(0)).cuda()
+        mask = self.get_negative_mask_1(pos_emb.size(0)).to(self.device)
         # neg=neg.masked_select(mask).view(2*pos_emb.size(0),-1)
         neg = neg.masked_select(mask).view(pos_emb.size(0), -1)
 
