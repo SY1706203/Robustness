@@ -33,7 +33,7 @@ class PGDAttack(BaseAttack):
 
         self.complementary = None
 
-    def attack(self, ori_adj, perturbations, users, posItems, negItems, num_users, path, flag):
+    def attack(self, ori_adj, perturbations, users, posItems, negItems, num_users, path, ids, flag):
         victim_model = self.surrogate
 
         # self.sparse_features=sp.issparse(ori_features)
@@ -77,7 +77,7 @@ class PGDAttack(BaseAttack):
         self.random_sample(ori_adj, perturbations, users, posItems, negItems, num_users)
         self.modified_adj = self.get_modified_adj(ori_adj, num_users).detach()
 
-        torch.save(self.modified_adj, path.format(flag))
+        torch.save(self.modified_adj, path.format(ids[flag]))
 
     def random_sample(self, ori_adj, perturbations, users, posItems, negItems, num_users):
         K = 5
@@ -185,7 +185,7 @@ class MinMax(PGDAttack):
         super(MinMax, self).__init__(model, nnodes, loss_type, feature_shape, attack_structure, attack_features,
                                      device=device)
 
-    def attack(self, ori_adj, perturbations, users, posItems, negItems, num_users, path, flag):
+    def attack(self, ori_adj, perturbations, users, posItems, negItems, num_users, path, ids, flag):
         victim_model = self.surrogate
 
         # self.sparse_features=sp.issparse(ori_features)

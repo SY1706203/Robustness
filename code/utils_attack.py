@@ -1,19 +1,20 @@
 from topology_attack import PGDAttack
 import torch
 import os
+import lightgcn
 
 
-def attack_model(recmodel, adj_matrix, perturbations, path, flag, users, posItems, negItems, num_users, device):
+def attack_model(recmodel, adj_matrix, perturbations, path, ids, flag, users, posItems, negItems, num_users, device):
     model = PGDAttack(model=recmodel, nnodes=adj_matrix.shape[0], loss_type='CE', device=device)
 
     model = model.to(device)
     print("attack light-GCN model")
-    if not os.path.exists(path.format(flag)):
-        model.attack(adj_matrix, perturbations, users, posItems, negItems, num_users, path, flag)
+    if not os.path.exists(path.format(ids[flag])):
+        model.attack(adj_matrix, perturbations, users, posItems, negItems, num_users, path, ids, flag)
         modified_adj = model.modified_adj
     else:
         print('load matrix from disc...')
-        modified_adj = torch.load(path.format(flag))
+        modified_adj = torch.load(path.format(ids[flag]))
         modified_adj = modified_adj.to(device)
     try:
         print("modified adjacency is same as original adjacency: ", (modified_adj == adj_matrix).all())
@@ -34,8 +35,8 @@ def attack_model(recmodel, adj_matrix, perturbations, path, flag, users, posItem
     return modified_adj
 
 
-def attack_randomly(recmodel, adj_matrix, perturbations, path, flag, users, posItems, negItems, num_users, device):
-    pgd_adj = attack_model(recmodel, adj_matrix, perturbations, path, flag, users, posItems, negItems, num_users,
+def attack_randomly(recmodel, adj_matrix, perturbations, path, ids, flag, users, posItems, negItems, num_users, device):
+    pgd_adj = attack_model(recmodel, adj_matrix, perturbations, path, ids, flag, users, posItems, negItems, num_users,
                            device)
 
     num_modified_edges = (pgd_adj != adj_matrix).sum().detach().cpu().numpy() // 2
@@ -54,3 +55,16 @@ def attack_randomly(recmodel, adj_matrix, perturbations, path, flag, users, posI
                                                                    detach().cpu().numpy()))
 
     return modified_adj
+
+
+def fit_lightGCN(device, adj, users, posItems, negItems, modified=True):
+    Recmodel = lightgcn.LightGCN(device)
+    Recmodel = Recmodel.to(device)
+    if modified:
+        print("training model on modified adj matrix..")
+    else:
+        print("training model on original adj matrix..")
+    Recmodel.fit(adj, users, posItems, negItems)
+    print("finished!")
+
+    return Recmodel

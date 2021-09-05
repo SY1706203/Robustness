@@ -62,12 +62,12 @@ class GROC_loss:
 
     def groc_train(self, data_len_, adj, perturbations_a, perturbations_b, users):
         self.modified_adj_a = attack_model(self.ori_model, adj, perturbations_a, self.args.path_modified_adj,
-                                           self.args.modified_adj_flag[0], self.users, self.posItems, self.negItems,
-                                           self.ori_model.num_users, self.device)
+                                           self.args.modified_adj_name, self.args.modified_adj_id[0], self.users,
+                                           self.posItems, self.negItems, self.ori_model.num_users, self.device)
 
         self.modified_adj_b = attack_model(self.ori_model, adj, perturbations_b, self.args.path_modified_adj,
-                                           self.args.modified_adj_flag[1], self.users, self.posItems, self.negItems,
-                                           self.ori_model.num_users, self.device)
+                                           self.args.modified_adj_name, self.args.modified_adj_id[1], self.users,
+                                           self.posItems, self.negItems, self.ori_model.num_users, self.device)
 
         try:
             print("modified adjacency matrix are not same:", (self.modified_adj_a == self.modified_adj_b).all())
@@ -90,12 +90,10 @@ class GROC_loss:
             aver_loss = 0.
             for (batch_i, (batch_users, batch_pos, batch_neg)) \
                     in enumerate(utils.minibatch(users_, posItems_, negItems_, batch_size=self.args.batch_size)):
-                if self.args.train_cascade:
-                    loss = self.groc_loss(self.modified_adj_b, batch_users, batch_pos)
-                else:
-                    bpr_loss, reg_loss = self.ori_model.bpr_loss(adj, batch_users, batch_pos, batch_neg)
-                    reg_loss = reg_loss * self.ori_model.weight_decay
-                    loss = bpr_loss + reg_loss + self.groc_loss(self.modified_adj_b, batch_users, batch_pos)
+
+                bpr_loss, reg_loss = self.ori_model.bpr_loss(adj, batch_users, batch_pos, batch_neg)
+                reg_loss = reg_loss * self.ori_model.weight_decay
+                loss = bpr_loss + reg_loss + self.groc_loss(batch_users, batch_pos)
 
                 loss.backward()
                 optimizer.step()
