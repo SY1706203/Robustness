@@ -20,13 +20,13 @@ parser.add_argument('--weight_decay',       type=float, default=5e-4,           
 parser.add_argument('--hidden',             type=int,   default=16,                                                                         help='Number of hidden units.')
 parser.add_argument('--dropout',            type=float, default=0.5,                                                                        help='Dropout rate (1-keep probability).')
 parser.add_argument('--train_groc',         type=bool,  default=False,                                                                      help='control if train the groc')
-parser.add_argument('--pdg_attack',         type=bool,  default=True,                                                                       help='PDG attack and evaluate')
+parser.add_argument('--pdg_attack',         type=bool,  default=False,                                                                      help='PDG attack and evaluate')
 parser.add_argument('--random_perturb',     type=bool,  default=False,                                                                      help='perturb adj randomly and compare to PGD')
 parser.add_argument('--dataset',            type=str,   default='citeseer', choices=['MOOC'],                                               help='dataset')
 parser.add_argument('--T_groc',             type=int,   default=0.7,                                                                        help='param temperature for GROC')
 parser.add_argument('--ptb_rate',           type=float, default=0.5,                                                                        help='perturbation rate')
 parser.add_argument('--model',              type=str,   default='PGD',      choices=['PGD', 'min-max'],                                     help='model variant')
-parser.add_argument('--valid_perturbation', type=bool,  default=True,                                                                       help='perturbation validation')
+parser.add_argument('--valid_perturbation', type=bool,  default=False,                                                                      help='perturbation validation')
 parser.add_argument('--train_cascade',      type=bool,  default=False,                                                                      help='train original model first then train model with GROC loss')
 parser.add_argument('--path_modified_adj',  type=str,   default=os.path.abspath(os.path.dirname(os.getcwd())) + '/data/modified_adj_{}.pt', help='path where modified adj matrix are saved')
 parser.add_argument('--modified_adj_flag',  type=list, default=['a', 'b'],                                                                  help='we attack adj twice for GROC training so we will have 2 modified adj matrix. In order to distinguish them we set a flag to save them independently')
@@ -89,7 +89,18 @@ if args.train_cascade or args.valid_perturbation:  # mostly used for validation
 
 if args.train_groc:
     groc = GROC_loss(Recmodel, args, users, posItems, negItems)
-    modified_adj_a, modified_adj_b = groc.groc_train(data_len, adj, perturbations_a, perturbations_b, users)
+    groc.groc_train(data_len, adj, perturbations_a, perturbations_b, users)
+    modified_adj_a, modified_adj_b = groc.modified_adj_a, groc.modified_adj_b
+
+    Recmodel_a = lightgcn.LightGCN(device)
+    Recmodel_a = Recmodel_a.to(device)
+    print("train the model with modified adjacency a matrix")
+    Recmodel_a.fit(modified_adj_a, users, posItems, negItems)
+
+    Recmodel_b = lightgcn.LightGCN(device)
+    Recmodel_b = Recmodel_b.to(device)
+    print("train the model with modified adjacency b matrix")
+    Recmodel_b.fit(modified_adj_b, users, posItems, negItems)
 
     if args.train_cascade:
         print("original model performance after GROC learning:")
@@ -107,19 +118,25 @@ if args.train_groc:
         Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(modified_adj_a), None, 0)
         print("===========================")
 
+        print("new model a performance after GROC learning on modified adjacency matrix A:")
+        print("===========================")
+        Procedure.Test(dataset, Recmodel_a, 100, normalize_adj_tensor(modified_adj_a), None, 0)
+        print("===========================")
+
         print("original model performance after GROC learning on  modified adjacency matrix B:")
         print("===========================")
         Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(modified_adj_b), None, 0)
         print("===========================")
 
+        print("new model b performance after GROC learning on modified adjacency matrix B:")
+        print("===========================")
+        Procedure.Test(dataset, Recmodel_b, 100, normalize_adj_tensor(modified_adj_b), None, 0)
+        print("===========================")
+
 if args.pdg_attack:
     # Setup Attack Model
-    adj_dir = args.path_modified_adj.format(args.modified_adj_flag[0])
-    if os.path.exists(adj_dir):
-        modified_adj = torch.load(adj_dir).to(device)
-    else:
-        modified_adj = attack_model(Recmodel, adj, perturbations_a, args.path_modified_adj, args.modified_adj_flag[0],
-                                    users, posItems, negItems, Recmodel.num_users, device)
+    modified_adj = attack_model(Recmodel, adj, perturbations_a, args.path_modified_adj, args.modified_adj_flag[0],
+                                users, posItems, negItems, Recmodel.num_users, device)
     Recmodel_ = lightgcn.LightGCN(device)
     Recmodel_ = Recmodel_.to(device)
     print("train the model with modified adjacency matrix")
