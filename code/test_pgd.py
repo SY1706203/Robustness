@@ -4,7 +4,6 @@ import argparse
 from register import dataset
 from utils import getTrainSet, normalize_adj_tensor
 from utils_attack import attack_model, attack_randomly, fit_lightGCN
-import lightgcn
 import Procedure
 import os
 from groc_loss import GROC_loss
@@ -60,6 +59,10 @@ num_users = Recmodel.num_users
 if args.random_perturb:
     modified_adj = attack_randomly(Recmodel, adj, perturbations_a, args.path_modified_adj, args.modified_adj_name,
                                    args.modified_adj_id[0], users, posItems, negItems, Recmodel.num_users, device)
+    try:
+        print("modified adjacency is same as original adjacency: ", (modified_adj == adj).all())
+    except AttributeError:
+        print("adjacency is not modified. Check your perturbation and make sure 0 isn't assigned.")
 
     Recmodel_ = fit_lightGCN(device, modified_adj, users, posItems, negItems)
     print("evaluate the model with modified adjacency matrix")
@@ -105,8 +108,14 @@ if args.pdg_attack:
     modified_adj = attack_model(Recmodel, adj, perturbations_a, args.path_modified_adj, args.modified_adj_name,
                                 args.modified_adj_id[0], users, posItems, negItems, Recmodel.num_users, device)
     Recmodel_ = fit_lightGCN(device, modified_adj, users, posItems, negItems)
+
+    try:
+        print("modified adjacency is same as original adjacency: ", (modified_adj == adj).all())
+    except AttributeError:
+        print("adjacency is not modified. Check your perturbation and make sure 0 isn't assigned.")
+
     print("evaluate the model with modified adjacency matrix")
     Procedure.Test(dataset, Recmodel_, 1, normalize_adj_tensor(modified_adj), None, 0)
-    if args.valid_perturbation:
-        print("evaluate the original model with modified adjacency matrix")
-        Procedure.Test(dataset, Recmodel, 1, normalize_adj_tensor(modified_adj), None, 0)
+
+    print("evaluate the original model with modified adjacency matrix")
+    Procedure.Test(dataset, Recmodel, 1, normalize_adj_tensor(modified_adj), None, 0)
