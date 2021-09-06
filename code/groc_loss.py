@@ -60,14 +60,15 @@ class GROC_loss:
 
         return torch.sum(torch.add(loss_vec_a, loss_vec_b)) / (2 * loss_vec_a.size(0))
 
-    def groc_train(self, data_len_, adj, perturbations_a, perturbations_b, users):
-        self.modified_adj_a = attack_model(self.ori_model, adj, perturbations_a, self.args.path_modified_adj,
-                                           self.args.modified_adj_name, self.args.modified_adj_id[0], self.users,
+    def groc_train(self, data_len_, adj, adj_a, adj_b, perturbations, users):
+        self.modified_adj_a = attack_model(self.ori_model, adj_a, perturbations, self.args.path_modified_adj,
+                                           self.args.modified_adj_name_with_rdm_ptb, self.args.modified_adj_id, self.users,
                                            self.posItems, self.negItems, self.ori_model.num_users, self.device)
 
-        self.modified_adj_b = attack_model(self.ori_model, adj, perturbations_b, self.args.path_modified_adj,
-                                           self.args.modified_adj_name, self.args.modified_adj_id[1], self.users,
-                                           self.posItems, self.negItems, self.ori_model.num_users, self.device)
+        self.modified_adj_b = attack_model(self.ori_model, adj_b, perturbations, self.args.path_modified_adj,
+                                           ['a_02_w_r_b', 'a_04_w_r_b', 'a_06_w_r_b', 'a_08_w_r_b', 'a_1_w_r_b', 'a_12_w_r_b', 'a_14_w_r_b', 'a_16_w_r_b', 'a_18_w_r_b', 'a_2_w_r_b'],
+                                           self.args.modified_adj_id, self.users, self.posItems, self.negItems,
+                                           self.ori_model.num_users, self.device)
 
         try:
             print("modified adjacency matrix are not same:", (self.modified_adj_a == self.modified_adj_b).all())
