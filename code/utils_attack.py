@@ -8,7 +8,8 @@ def attack_model(recmodel, adj_matrix, perturbations, path, ids, flag, users, po
     model = PGDAttack(model=recmodel, nnodes=adj_matrix.shape[0], loss_type='CE', device=device)
 
     model = model.to(device)
-    print("attack light-GCN model")
+    print("attack light-GCN model-PGD")
+    print("=================================================")
     print('searching saved matrix from path {}...'.format(path.format(ids[flag])))
     if not os.path.exists(path.format(ids[flag])):
         print('matrix doesn"t exist, attacking...')
@@ -34,6 +35,7 @@ def attack_model(recmodel, adj_matrix, perturbations, path, ids, flag, users, po
                  detach().cpu().numpy()))
     print("there are edges between user-user and item-item in modified adj matrix: ",
           modified_adj[:num_users, :num_users].sum() + modified_adj[num_users:, num_users:].sum() > 0.5)
+    print("=================================================")
     return modified_adj
 
 
@@ -42,7 +44,8 @@ def attack_randomly(recmodel, adj_matrix, perturbations, path, ids, flag, users,
                            device)
 
     num_modified_edges = (pgd_adj != adj_matrix).sum().detach().cpu().numpy() // 2
-    print("{} of edges are modified in low/upper triangular matrix from PGD".format(num_modified_edges))
+    print("attack light-GCN model-Random")
+    print("=================================================")
     modification_mask = torch.FloatTensor(num_users, adj_matrix.size()[0] - num_users).uniform_() \
                         <= num_modified_edges / (num_users * (adj_matrix.size()[0] - num_users))
     modification_mask = modification_mask.to(device)
@@ -55,6 +58,7 @@ def attack_randomly(recmodel, adj_matrix, perturbations, path, ids, flag, users,
     modified_adj = modified_adj.float()
     print("{} edges are modified in randomly modified adj matrix.: ".format((modified_adj != adj_matrix).sum().
                                                                    detach().cpu().numpy()))
+    print("=================================================")
 
     return modified_adj
 
@@ -62,11 +66,13 @@ def attack_randomly(recmodel, adj_matrix, perturbations, path, ids, flag, users,
 def fit_lightGCN(device, adj, users, posItems, negItems, modified=True):
     Recmodel = lightgcn.LightGCN(device)
     Recmodel = Recmodel.to(device)
+    print("fit lightGCN..")
+    print("=================================================")
     if modified:
         print("training model on modified adj matrix..")
     else:
         print("training model on original adj matrix..")
     Recmodel.fit(adj, users, posItems, negItems)
     print("finished!")
-
+    print("=================================================")
     return Recmodel

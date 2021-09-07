@@ -34,6 +34,11 @@ parser.add_argument('--modified_adj_id',                type=list,  default=0,  
 
 args = parser.parse_args()
 
+print("=================================================")
+print("All parameters in args")
+print(args)
+print("=================================================")
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 np.random.seed(args.seed)
 torch.manual_seed(args.seed)
@@ -56,6 +61,8 @@ Recmodel = fit_lightGCN(device, adj, users, posItems, negItems, modified=False)
 num_users = Recmodel.num_users
 
 if args.random_perturb:
+    print("train model using random perturbation")
+    print("=================================================")
     modified_adj = attack_randomly(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
                                    args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
     try:
@@ -66,12 +73,15 @@ if args.random_perturb:
     Recmodel_ = fit_lightGCN(device, modified_adj, users, posItems, negItems)
     print("evaluate the model with modified adjacency matrix")
     Procedure.Test(dataset, Recmodel_, 1, normalize_adj_tensor(modified_adj), None, 0)
+    print("=================================================")
 
 if args.train_groc:
+    print("Train GROC loss")
+    print("=================================================")
     rdm_modified_adj_a = attack_randomly(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
-                                     args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+                                         args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
     rdm_modified_adj_b = attack_randomly(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
-                                     args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+                                         args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
     try:
         print("2 random perturbed adj matrix ain't same: ", ~(rdm_modified_adj_a == rdm_modified_adj_b).all())
     except AttributeError:
@@ -99,9 +109,12 @@ if args.train_groc:
     print("new model b performance after GROC learning on modified adjacency matrix B:")
     print("===========================")
     Procedure.Test(dataset, Recmodel_b, 100, normalize_adj_tensor(modified_adj_b), None, 0)
-    print("===========================")
+
+    print("=================================================")
 
 if args.pdg_attack:
+    print("train model with pdg attack")
+    print("=================================================")
     # Setup Attack Model
     modified_adj = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
                                 args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
@@ -114,3 +127,4 @@ if args.pdg_attack:
 
     print("evaluate the model with modified adjacency matrix")
     Procedure.Test(dataset, Recmodel_, 1, normalize_adj_tensor(modified_adj), None, 0)
+    print("=================================================")
