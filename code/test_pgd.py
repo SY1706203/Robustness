@@ -1,13 +1,7 @@
 import torch
 import numpy as np
 import argparse
-from register import dataset
-from utils import getTrainSet, normalize_adj_tensor
-from utils_attack import attack_model, attack_randomly, fit_lightGCN
-import Procedure
 import os
-from groc_loss import GROC_loss
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed',                           type=int,   default=15,                                                                                                                                                 help='Random seed.')
@@ -38,6 +32,12 @@ print("=================================================")
 print("All parameters in args")
 print(args)
 print("=================================================")
+
+from register import dataset
+from utils import getTrainSet, normalize_adj_tensor
+from utils_attack import attack_model, attack_randomly, fit_lightGCN
+import Procedure
+from groc_loss import GROC_loss
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 np.random.seed(args.seed)
