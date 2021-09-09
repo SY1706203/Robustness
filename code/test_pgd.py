@@ -2,6 +2,11 @@ import torch
 import numpy as np
 import argparse
 import os
+from register import dataset
+from utils import getTrainSet, normalize_adj_tensor
+from utils_attack import attack_model, attack_randomly, fit_lightGCN
+import Procedure
+from groc_loss import GROC_loss
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed',                           type=int,   default=15,                                                                                                                                                 help='Random seed.')
@@ -23,7 +28,7 @@ parser.add_argument('--path_modified_adj',              type=str,   default=os.p
 parser.add_argument('--modified_adj_name',              type=list,  default=['a_02', 'a_04', 'a_06', 'a_08', 'a_1', 'a_12', 'a_14', 'a_16', 'a_18', 'a_2'],                                                                     help='we attack adj twice for GROC training so we will have 2 modified adj matrix. In order to distinguish them we set a flag to save them independently')
 parser.add_argument('--modified_adj_name_with_rdm_ptb', type=list,  default=['a_02_w_r', 'a_04_w_r', 'a_06_w_r', 'a_08_w_r', 'a_1_w_r', 'a_12_w_r', 'a_14_w_r', 'a_16_w_r', 'a_18_w_r', 'a_2_w_r'],                             help='we attack adj twice for GROC training, 1st random 2nd PGD.')
 parser.add_argument('--perturb_strength_list',          type=list,  default=[10, 5, 3.33, 2.5, 2, 1.67, 1.42, 1.25, 1.11, 1],                                                                                                   help='2 perturb strength for 2 PDG attacks')
-parser.add_argument('--modified_adj_id',                type=list,  default=0,                                                                                                                                                  help='select adj matrix from modified adj matrix ids')
+parser.add_argument('--modified_adj_id',                type=int,  default=0,                                                                                                                                                  help='select adj matrix from modified adj matrix ids')
 
 
 args = parser.parse_args()
@@ -32,12 +37,6 @@ print("=================================================")
 print("All parameters in args")
 print(args)
 print("=================================================")
-
-from register import dataset
-from utils import getTrainSet, normalize_adj_tensor
-from utils_attack import attack_model, attack_randomly, fit_lightGCN
-import Procedure
-from groc_loss import GROC_loss
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 np.random.seed(args.seed)

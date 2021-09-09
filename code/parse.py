@@ -43,4 +43,8 @@ def parse_args():
     parser.add_argument('--pretrain', type=int, default=0, help='whether we use pretrained weight or not')
     parser.add_argument('--seed', type=int, default=2020, help='random seed')
     parser.add_argument('--model', type=str, default='lgn', help='rec-model, support [mf, lgn]')
+    parser.add_argument('--modified_adj_id', type=list, default=0,
+                        help='select adj matrix from modified adj matrix ids')
+    parser.add_argument('--train_groc', type=bool, default=False, help='control if train the groc')
+
     return parser.parse_args()
