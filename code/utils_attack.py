@@ -1,4 +1,4 @@
-from topology_attack import PGDAttack
+from topology_attack import PGDAttack, EmbeddingAttack
 import torch
 import os
 import lightgcn
@@ -63,15 +63,43 @@ def attack_randomly(recmodel, adj_matrix, perturbations, path, ids, flag, users,
     return modified_adj
 
 
-def fit_lightGCN(device, adj, users, posItems, negItems, modified=True):
-    Recmodel = lightgcn.LightGCN(device)
+def attack_embedding(recmodel, adj_matrix, eps, path, ids, flag, users, posItems, negItems, num_users, device):
+    model = EmbeddingAttack(model=recmodel, nnodes=adj_matrix.shape[0], device=device)
+    model = model.to(device)
+    print("attack light-GCN model's Embedding")
+    print("=================================================")
+    print('searching saved model from path {}...'.format(path.format(ids[flag])))
+    if not os.path.exists(path.format(ids[flag])):
+        print('model doesn"t exist, attacking...')
+        model.attack(adj_matrix, eps, users, posItems, negItems, num_users, path, ids, flag)
+        modified_model = model.surrogate
+    else:
+        print('load model from disc...')
+        modified_model = lightgcn.LightGCN(device)
+        modified_model.load_state_dict(torch.load(path.format(ids[flag])))
+        modified_model = modified_model.to(device)
+
+    return modified_model
+
+
+def fit_lightGCN(device, adj, users, posItems, negItems, modified_adj=True, pass_model_in=False, input_model=None):
+    if not pass_model_in:
+        assert input_model is None, "You set pass_model_in to True and didn't pass a model in. Check where you invoked fit_lightGCN"
+        Recmodel = lightgcn.LightGCN(device)
+    else:
+        Recmodel = input_model
     Recmodel = Recmodel.to(device)
     print("fit lightGCN..")
     print("=================================================")
-    if modified:
+    if modified_adj:
         print("training model on modified adj matrix..")
+        print("=================================================")
     else:
-        print("training model on original adj matrix..")
+        if pass_model_in:
+            print("training passed accacked model on original adj matrix..")
+        else:
+            print("training model on original adj matrix..")
+        print("=================================================")
     Recmodel.fit(adj, users, posItems, negItems)
     print("finished!")
     print("=================================================")

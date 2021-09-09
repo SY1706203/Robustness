@@ -48,12 +48,17 @@ class LightGCN(nn.Module):
         rating = self.f(torch.matmul(users_emb, items_emb.t()))
         return rating
 
-    def computer(self, adj):
+    def computer(self, adj, delta_u=None, delta_i=None):
+        # TODO: override lightGCN here
         """
         propagate methods for lightGCN
         """
-        users_emb = self.embedding_user.weight
-        items_emb = self.embedding_item.weight
+        if delta_i is None and delta_u is None:
+            users_emb = self.embedding_user.weight
+            items_emb = self.embedding_item.weight
+        else:
+            users_emb = self.embedding_user.weight + delta_u
+            items_emb = self.embedding_item.weight + delta_i
         all_emb = torch.cat([users_emb, items_emb])
         #   torch.split(all_emb , [self.num_users, self.num_items])
         embs = [all_emb]
@@ -80,8 +85,8 @@ class LightGCN(nn.Module):
         gamma = torch.sum(inner_pro, dim=1)
         return gamma
 
-    def getEmbedding(self, adj, users, pos_items):
-        all_users, all_items = self.computer(adj)
+    def getEmbedding(self, adj, users, pos_items, delta_u=None, delta_i=None):
+        all_users, all_items = self.computer(adj, delta_u, delta_i)
         users_emb = all_users[users]
         pos_emb = all_items[pos_items]
         # neg_emb = all_items[neg_items]
@@ -99,7 +104,7 @@ class LightGCN(nn.Module):
         # negative_mask=torch.cat((negative_mask,negative_mask),0)
         return negative_mask
 
-    def bpr_loss(self, adj, users, poss, neg):
+    def bpr_loss(self, adj, users, poss, neg, delta_u=None, delta_i=None):
         '''
         (users_emb, pos_emb, neg_emb,
          userEmb0, posEmb0, negEmb0) = self.getEmbedding(adj, users.long(), pos.long(), neg.long())
@@ -114,7 +119,7 @@ class LightGCN(nn.Module):
         loss = torch.mean(torch.nn.functional.softplus(neg_scores - pos_scores))
         '''
 
-        (users_emb, pos_emb, userEmb0, posEmb0) = self.getEmbedding(adj, users.long(), poss.long())
+        (users_emb, pos_emb, userEmb0, posEmb0) = self.getEmbedding(adj, users.long(), poss.long(), delta_u, delta_i)
         # pos_emb_old=pos_emb
         users_emb = nn.functional.normalize(users_emb, dim=1)
         pos_emb = nn.functional.normalize(pos_emb, dim=1)

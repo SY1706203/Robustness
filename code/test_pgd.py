@@ -2,9 +2,10 @@ import torch
 import numpy as np
 import argparse
 import os
+import lightgcn
 from register import dataset
 from utils import getTrainSet, normalize_adj_tensor
-from utils_attack import attack_model, attack_randomly, fit_lightGCN
+from utils_attack import attack_model, attack_randomly, attack_embedding, fit_lightGCN
 import Procedure
 from groc_loss import GROC_loss
 
@@ -19,6 +20,7 @@ parser.add_argument('--hidden',                         type=int,   default=16, 
 parser.add_argument('--dropout',                        type=float, default=0.5,                                                                                                                                                help='Dropout rate (1-keep probability).')
 parser.add_argument('--train_groc',                     type=bool,  default=False,                                                                                                                                              help='control if train the groc')
 parser.add_argument('--pdg_attack',                     type=bool,  default=False,                                                                                                                                              help='PDG attack and evaluate')
+parser.add_argument('--embedding_attack',               type=bool,  default=False,                                                                                                                                              help='PDG attack and evaluate')
 parser.add_argument('--random_perturb',                 type=bool,  default=False,                                                                                                                                              help='perturb adj randomly and compare to PGD')
 parser.add_argument('--dataset',                        type=str,   default='citeseer',                                                                                                             choices=['MOOC'],           help='dataset')
 parser.add_argument('--T_groc',                         type=int,   default=0.7,                                                                                                                                                help='param temperature for GROC')
@@ -28,8 +30,11 @@ parser.add_argument('--path_modified_adj',              type=str,   default=os.p
 parser.add_argument('--modified_adj_name',              type=list,  default=['a_02', 'a_04', 'a_06', 'a_08', 'a_1', 'a_12', 'a_14', 'a_16', 'a_18', 'a_2'],                                                                     help='we attack adj twice for GROC training so we will have 2 modified adj matrix. In order to distinguish them we set a flag to save them independently')
 parser.add_argument('--modified_adj_name_with_rdm_ptb', type=list,  default=['a_02_w_r', 'a_04_w_r', 'a_06_w_r', 'a_08_w_r', 'a_1_w_r', 'a_12_w_r', 'a_14_w_r', 'a_16_w_r', 'a_18_w_r', 'a_2_w_r'],                             help='we attack adj twice for GROC training, 1st random 2nd PGD.')
 parser.add_argument('--perturb_strength_list',          type=list,  default=[10, 5, 3.33, 2.5, 2, 1.67, 1.42, 1.25, 1.11, 1],                                                                                                   help='2 perturb strength for 2 PDG attacks')
-parser.add_argument('--modified_adj_id',                type=int,  default=0,                                                                                                                                                  help='select adj matrix from modified adj matrix ids')
-
+parser.add_argument('--modified_adj_id',                type=int,   default=0,                                                                                                                                                  help='select adj matrix from modified adj matrix ids')
+parser.add_argument('--path_modified_models',           type=str,   default=os.path.abspath(os.path.dirname(os.getcwd())) + '/data/modified_model_{}.pt',                                                                       help='path where modified model is saved')
+parser.add_argument('--modified_models_name',           type=list,  default=['02', '04', '06', '08', '1', '12', '14', '16', '18', '2'],                                                                                         help='list of flags for modified models')
+parser.add_argument('--eps',                            type=list,  default=[0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2],                                                                                                     help='attack restriction eps for embedding attack')
+parser.add_argument('--modified_models_id',             type=int,   default=0,                                                                                                                                                  help='select model matrix from modified model matrix ids')
 
 args = parser.parse_args()
 
@@ -55,7 +60,7 @@ users, posItems, negItems = getTrainSet(dataset)
 data_len = len(users)
 # Setup and fit origin Model
 
-Recmodel = fit_lightGCN(device, adj, users, posItems, negItems, modified=False)
+Recmodel = fit_lightGCN(device, adj, users, posItems, negItems, modified_adj=False)
 
 num_users = Recmodel.num_users
 
@@ -88,7 +93,9 @@ if args.train_groc:
 
     print("{} edges are different in both random perturbed adj matrix.".format((rdm_modified_adj_a != rdm_modified_adj_b)
                                                                                .sum().detach().cpu().numpy()))
-    groc = GROC_loss(Recmodel, args, users, posItems, negItems)
+    Recmodel_ = lightgcn.LightGCN(device)
+    Recmodel_ = Recmodel_.to(device)
+    groc = GROC_loss(Recmodel_, args, users, posItems, negItems)
     groc.groc_train(data_len, adj, rdm_modified_adj_a, rdm_modified_adj_b, perturbations, users)
     modified_adj_a, modified_adj_b = groc.modified_adj_a, groc.modified_adj_b
 
@@ -126,4 +133,16 @@ if args.pdg_attack:
 
     print("evaluate the model with modified adjacency matrix")
     Procedure.Test(dataset, Recmodel_, 1, normalize_adj_tensor(modified_adj), None, 0)
+    print("=================================================")
+
+if args.embedding_attack:
+    print("train model with embedding adversarial attack")
+    print("=================================================")
+    origin_model_without_fitting = lightgcn.LightGCN(device)
+    modified_model = attack_embedding(origin_model_without_fitting, adj, args.eps[args.modified_models_id], args.path_modified_models, args.modified_models_name,
+                                      args.modified_models_id, users, posItems, negItems, num_users, device)
+    fit_model = fit_lightGCN(device, adj, users, posItems, negItems, pass_model_in=True, input_model=modified_model)
+
+    print("evaluate the ATTACKED model with original adjacency matrix")
+    Procedure.Test(dataset, fit_model, 1, normalize_adj_tensor(adj), None, 0)
     print("=================================================")

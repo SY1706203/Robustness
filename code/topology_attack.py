@@ -3,6 +3,7 @@ import numpy as np
 from tqdm import tqdm
 import scipy.sparse as sp
 from torch.nn.parameter import Parameter
+import torch.nn as nn
 import torch.nn.functional as F
 from torch import optim
 from base_attack import BaseAttack
@@ -149,7 +150,6 @@ class PGDAttack(BaseAttack):
         tril_indices = torch.tril_indices(row=self.nnodes - 1, col=self.nnodes - 1, offset=0)
         m[tril_indices[0], tril_indices[1]] = self.adj_changes
         m = m + m.t()
-        print("----debug info")
         modified_adj = self.complementary * m + ori_adj
         # modified_adj=m+ori_adj
         modified_adj[:num_users, :num_users] = 0
@@ -262,3 +262,56 @@ class MinMax(PGDAttack):
 
         self.random_sample(ori_adj, perturbations, users, posItems, negItems, num_users)
         self.modified_adj = self.get_modified_adj(ori_adj, num_users).detach()
+
+
+class EmbeddingAttack(BaseAttack):
+    def __init__(self, model=None, nnodes=None, attack_structure=True, attack_features=False, device='cuda:0'):
+        super(EmbeddingAttack, self).__init__(model, nnodes, attack_structure, attack_features, device)
+
+        assert attack_features or attack_structure, 'attack_features or attack_structure cannot be both False'
+
+        if attack_structure:
+            self.delta_U = Parameter(torch.FloatTensor(self.surrogate.num_users, self.surrogate.latent_dim))
+            self.delta_I = Parameter(torch.FloatTensor(self.surrogate.num_items, self.surrogate.latent_dim))
+
+            self.delta_U.data.fill_(0)
+            self.delta_I.data.fill_(0)
+
+    def attack(self, ori_adj, eps, users, posItems, negItems, num_users, path, ids, flag):
+        victim_model = self.surrogate
+
+        adj_norm = utils.normalize_adj_tensor(utils.to_tensor(ori_adj.cpu(), device=self.device))
+
+        U_delta_adv = torch.zeros(self.surrogate.num_users, self.surrogate.latent_dim).to(self.device)
+        I_delta_adv = torch.zeros(self.surrogate.num_items, self.surrogate.latent_dim).to(self.device)
+
+        victim_model.eval()
+
+        epochs = 100
+        for t in tqdm(range(epochs)):
+            users = users.to(self.device)
+            posItems = posItems.to(self.device)
+            negItems = negItems.to(self.device)
+            users, posItems, negItems = utils.shuffle(users, posItems, negItems)
+
+            for (batch_i,
+                 (batch_users,
+                  batch_pos,
+                  batch_neg)) in enumerate(utils.minibatch(users,
+                                                           posItems,
+                                                           negItems,
+                                                           batch_size=2048)):
+                loss, _ = victim_model.bpr_loss(adj_norm, batch_users, batch_pos, batch_neg, self.delta_U, self.delta_I)
+
+                U_delta_adv += torch.autograd.grad(loss, self.delta_U, retain_graph=True)[0]
+                I_delta_adv += torch.autograd.grad(loss, self.delta_I, retain_graph=True)[0]
+
+        loss, _ = victim_model.bpr_loss(adj_norm, users, posItems, negItems, self.delta_U, self.delta_I)
+
+        U_delta_adv = eps * nn.functional.normalize(U_delta_adv, dim=0)
+        I_delta_adv = eps * nn.functional.normalize(I_delta_adv, dim=0)
+
+        victim_model.embedding_user.weight.data.copy_(victim_model.embedding_user.weight + U_delta_adv)
+        victim_model.embedding_item.weight.data.copy_(victim_model.embedding_item.weight + I_delta_adv)
+
+        torch.save(victim_model.state_dict(), path.format(ids[flag]))
