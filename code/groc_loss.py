@@ -8,9 +8,10 @@ from utils_attack import attack_model
 
 
 class GROC_loss:
-    def __init__(self, ori_model, args, users, posItems, negItems):
+    def __init__(self, ori_model, vanila_model, args, users, posItems, negItems):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.ori_model = ori_model
+        self.trn_model = vanila_model
         self.args = args
         self.users = users
         self.posItems = posItems
@@ -19,7 +20,7 @@ class GROC_loss:
         self.modified_adj_b = None
 
     def get_embed_groc(self, modified_adj, users_, poss):
-        (users_emb, pos_emb, _, _) = self.ori_model.getEmbedding(modified_adj, users_.long(), poss.long())
+        (users_emb, pos_emb, _, _) = self.trn_model.getEmbedding(modified_adj, users_.long(), poss.long())
 
         users_emb = nn.functional.normalize(users_emb, dim=1)
         pos_emb = nn.functional.normalize(pos_emb, dim=1)
@@ -75,9 +76,8 @@ class GROC_loss:
         except AttributeError:
             print("2 modified adjacency matrix are same. Check your perturbation value")
 
-        self.ori_model.train()
-        optimizer = optim.Adam(self.ori_model.parameters(), lr=self.ori_model.lr,
-                               weight_decay=self.ori_model.weight_decay)
+        self.trn_model.train()
+        optimizer = optim.Adam(self.trn_model.parameters(), lr=self.trn_model.lr, weight_decay=self.trn_model.weight_decay)
 
         total_batch = len(users) // self.args.batch_size + 1
         scheduler = scheduler_groc(optimizer, data_len_, self.args.warmup_steps, total_batch, self.args.epochs)
@@ -92,8 +92,8 @@ class GROC_loss:
             for (batch_i, (batch_users, batch_pos, batch_neg)) \
                     in enumerate(utils.minibatch(users_, posItems_, negItems_, batch_size=self.args.batch_size)):
 
-                bpr_loss, reg_loss = self.ori_model.bpr_loss(adj, batch_users, batch_pos, batch_neg)
-                reg_loss = reg_loss * self.ori_model.weight_decay
+                bpr_loss, reg_loss = self.trn_model.bpr_loss(adj, batch_users, batch_pos, batch_neg)
+                reg_loss = reg_loss * self.trn_model.weight_decay
                 loss = bpr_loss + reg_loss + self.groc_loss(batch_users, batch_pos)
 
                 loss.backward()

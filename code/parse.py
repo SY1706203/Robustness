@@ -46,5 +46,10 @@ def parse_args():
     parser.add_argument('--modified_adj_id', type=list, default=0,
                         help='select adj matrix from modified adj matrix ids')
     parser.add_argument('--train_groc', type=bool, default=False, help='control if train the groc')
+    parser.add_argument('--modified_models_id', type=int, default=0,
+                        help='select model matrix from modified model matrix ids')
+    parser.add_argument('--embedding_attack', type=bool, default=False, help='PDG attack and evaluate')
+    parser.add_argument('--pdg_attack', type=bool, default=False, help='PDG attack and evaluate')
+    parser.add_argument('--random_perturb', type=bool, default=False, help='perturb adj randomly and compare to PGD')
 
     return parser.parse_args()

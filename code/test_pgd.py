@@ -95,7 +95,7 @@ if args.train_groc:
                                                                                .sum().detach().cpu().numpy()))
     Recmodel_ = lightgcn.LightGCN(device)
     Recmodel_ = Recmodel_.to(device)
-    groc = GROC_loss(Recmodel_, args, users, posItems, negItems)
+    groc = GROC_loss(Recmodel, Recmodel_, args, users, posItems, negItems)
     groc.groc_train(data_len, adj, rdm_modified_adj_a, rdm_modified_adj_b, perturbations, users)
     modified_adj_a, modified_adj_b = groc.modified_adj_a, groc.modified_adj_b
 
