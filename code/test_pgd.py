@@ -99,22 +99,19 @@ if args.train_groc:
     groc.groc_train(data_len, adj, rdm_modified_adj_a, rdm_modified_adj_b, perturbations, users)
     modified_adj_a, modified_adj_b = groc.modified_adj_a, groc.modified_adj_b
 
-    Recmodel_a = fit_lightGCN(device, modified_adj_a, users, posItems, negItems)
-    Recmodel_b = fit_lightGCN(device, modified_adj_b, users, posItems, negItems)
-
     print("original model performance on original adjacency matrix:")
     print("===========================")
     Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(adj), None, 0)
     print("===========================")
 
-    print("new model a performance after GROC learning on modified adjacency matrix A:")
+    print("trn_model performance after GROC learning on modified adjacency matrix A:")
     print("===========================")
-    Procedure.Test(dataset, Recmodel_a, 100, normalize_adj_tensor(modified_adj_a), None, 0)
+    Procedure.Test(dataset, groc.trn_model, 100, normalize_adj_tensor(modified_adj_a), None, 0)
     print("===========================")
 
-    print("new model b performance after GROC learning on modified adjacency matrix B:")
+    print("trn_model performance after GROC learning on modified adjacency matrix B:")
     print("===========================")
-    Procedure.Test(dataset, Recmodel_b, 100, normalize_adj_tensor(modified_adj_b), None, 0)
+    Procedure.Test(dataset, groc.trn_model, 100, normalize_adj_tensor(modified_adj_b), None, 0)
 
     print("=================================================")
 
