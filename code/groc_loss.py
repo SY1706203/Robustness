@@ -94,7 +94,7 @@ class GROC_loss:
 
                 bpr_loss, reg_loss = self.trn_model.bpr_loss(adj, batch_users, batch_pos, batch_neg)
                 reg_loss = reg_loss * self.trn_model.weight_decay
-                loss = self.args.loss_weight_bpr * bpr_loss + reg_loss + (1 - self.args.loss_weight) * self.groc_loss(batch_users, batch_pos)
+                loss = self.args.loss_weight_bpr * bpr_loss + reg_loss + (1 - self.args.loss_weight_bpr) * self.groc_loss(batch_users, batch_pos)
 
                 loss.backward()
                 optimizer.step()
