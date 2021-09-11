@@ -11,7 +11,7 @@ from groc_loss import GROC_loss
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed',                           type=int,   default=15,                                                                                                                                                 help='Random seed.')
-parser.add_argument('--warmup_steps',                   type=int,   default=100000,                                                                                                                                             help='Warm up steps for scheduler.')
+parser.add_argument('--warmup_steps',                   type=int,   default=10000,                                                                                                                                             help='Warm up steps for scheduler.')
 parser.add_argument('--batch_size',                     type=int,   default=2048,                                                                                                                                               help='BS.')
 parser.add_argument('--epochs',                         type=int,   default=100,                                                                                                                                                help='Number of epochs to train.')
 parser.add_argument('--lr',                             type=float, default=0.01,                                                                                                                                               help='Initial learning rate.')
