@@ -306,8 +306,6 @@ class EmbeddingAttack(BaseAttack):
                 U_delta_adv += torch.autograd.grad(loss, self.delta_U, retain_graph=True)[0]
                 I_delta_adv += torch.autograd.grad(loss, self.delta_I, retain_graph=True)[0]
 
-        loss, _ = victim_model.bpr_loss(adj_norm, users, posItems, negItems, self.delta_U, self.delta_I)
-
         U_delta_adv = eps * nn.functional.normalize(U_delta_adv, dim=0)
         I_delta_adv = eps * nn.functional.normalize(I_delta_adv, dim=0)
 
