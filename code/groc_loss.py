@@ -80,9 +80,9 @@ class GROC_loss:
         optimizer = optim.Adam(self.trn_model.parameters(), lr=self.trn_model.lr, weight_decay=self.trn_model.weight_decay)
 
         total_batch = len(users) // self.args.batch_size + 1
-        scheduler = scheduler_groc(optimizer, data_len_, self.args.warmup_steps, total_batch, self.args.epochs)
+        scheduler = scheduler_groc(optimizer, data_len_, self.args.warmup_steps, total_batch, self.args.groc_epochs)
 
-        for i in range(self.args.epochs):
+        for i in range(self.args.groc_epochs):
             optimizer.zero_grad()
             users_ = users.to(self.device)
             posItems_ = self.posItems.to(self.device)
