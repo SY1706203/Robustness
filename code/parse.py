@@ -50,7 +50,7 @@ def parse_args():
     parser.add_argument('--loss_weight_bpr', type=float, default=0.9, help='control loss form')
     parser.add_argument('--modified_models_id', type=int, default=0,
                         help='select model matrix from modified model matrix ids')
-    parser.add_argument('--T_groc', type=int, default=0.7, help='param temperature for GROC')
+    parser.add_argument('--T_groc', type=float, default=0.7, help='param temperature for GROC')
     parser.add_argument('--embedding_attack', type=bool, default=False, help='PDG attack and evaluate')
     parser.add_argument('--pdg_attack', type=bool, default=False, help='PDG attack and evaluate')
     parser.add_argument('--random_perturb', type=bool, default=False, help='perturb adj randomly and compare to PGD')
