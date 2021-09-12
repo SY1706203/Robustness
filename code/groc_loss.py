@@ -101,6 +101,7 @@ class GROC_loss:
                 scheduler.step()
 
                 aver_loss += loss.cpu().item()
+            print("GROC Lr: ", self.trn_model.lr)
             aver_loss = aver_loss / total_batch
             if i % 10 == 0:
                 print("GROC Loss: ", aver_loss)
