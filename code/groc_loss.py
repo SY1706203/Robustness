@@ -82,7 +82,7 @@ class GROC_loss:
         total_batch = len(users) // self.args.batch_size + 1
         scheduler = scheduler_groc(optimizer, data_len_, self.args.warmup_steps, self.args.batch_size, self.args.groc_epochs)
 
-        for i in range(self.args.groc_epochs):
+        for i in range(100):
             optimizer.zero_grad()
             users_ = users.to(self.device)
             posItems_ = self.posItems.to(self.device)
