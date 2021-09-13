@@ -82,7 +82,7 @@ class GROC_loss:
         total_batch = len(users) // self.args.batch_size + 1
         scheduler = scheduler_groc(optimizer, data_len_, self.args.warmup_steps, self.args.batch_size, self.args.groc_epochs)
 
-        for i in range(100):
+        for i in range(self.args.groc_epochs):
             optimizer.zero_grad()
             users_ = users.to(self.device)
             posItems_ = self.posItems.to(self.device)
@@ -91,10 +91,12 @@ class GROC_loss:
             aver_loss = 0.
             for (batch_i, (batch_users, batch_pos, batch_neg)) \
                     in enumerate(utils.minibatch(users_, posItems_, negItems_, batch_size=self.args.batch_size)):
-
-                bpr_loss, reg_loss = self.trn_model.bpr_loss(adj, batch_users, batch_pos, batch_neg)
-                reg_loss = reg_loss * self.trn_model.weight_decay
-                loss = self.args.loss_weight_bpr * bpr_loss + reg_loss + (1 - self.args.loss_weight_bpr) * self.groc_loss(batch_users, batch_pos)
+                if self.args.train_groc_casade:
+                    loss = self.groc_loss(batch_users, batch_pos)
+                else:
+                    bpr_loss, reg_loss = self.trn_model.bpr_loss(adj, batch_users, batch_pos, batch_neg)
+                    reg_loss = reg_loss * self.trn_model.weight_decay
+                    loss = self.args.loss_weight_bpr * bpr_loss + reg_loss + (1 - self.args.loss_weight_bpr) * self.groc_loss(batch_users, batch_pos)
 
                 loss.backward()
                 optimizer.step()

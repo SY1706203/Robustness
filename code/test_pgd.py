@@ -24,6 +24,7 @@ parser.add_argument('--groc_with_embed_attack',         type=bool,  default=Fals
 parser.add_argument('--pgd_attack',                     type=bool,  default=False,                                                                                                                                               help='PDG attack and evaluate')
 parser.add_argument('--embedding_attack',               type=bool,  default=False,                                                                                                                                               help='PDG attack and evaluate')
 parser.add_argument('--random_perturb',                 type=bool,  default=False,                                                                                                                                               help='perturb adj randomly and compare to PGD')
+parser.add_argument('--train_groc_casade',              type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
 parser.add_argument('--loss_weight_bpr',                type=float, default=0.9,                                                                                                                                                 help='train loss with learnable weight between 2 losses')
 parser.add_argument('--dataset',                        type=str,   default='citeseer',                                                                                                             choices=['MOOC'],            help='dataset')
 parser.add_argument('--T_groc',                         type=float, default=0.7,                                                                                                                                                 help='param temperature for GROC')
@@ -84,6 +85,10 @@ if args.random_perturb:
     print("=================================================")
 
 if args.train_groc:
+    print("original model performance on original adjacency matrix:")
+    print("===========================")
+    Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(adj), None, 0)
+    print("===========================")
     print("Train GROC loss")
     print("=================================================")
     rdm_modified_adj_a = attack_randomly(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
@@ -97,8 +102,11 @@ if args.train_groc:
 
     print("{} edges are different in both random perturbed adj matrix.".format((rdm_modified_adj_a != rdm_modified_adj_b)
                                                                                .sum().detach().cpu().numpy()))
-    Recmodel_ = lightgcn.LightGCN(device)
-    Recmodel_ = Recmodel_.to(device)
+    if not args.train_groc_casade:
+        Recmodel_ = lightgcn.LightGCN(device)
+        Recmodel_ = Recmodel_.to(device)
+    else:
+        Recmodel_ = Recmodel
     groc = GROC_loss(Recmodel, Recmodel_, args, users, posItems, negItems)
     groc.groc_train(data_len, adj, rdm_modified_adj_a, rdm_modified_adj_b, perturbations, users)
     modified_adj_a, modified_adj_b = groc.modified_adj_a, groc.modified_adj_b
