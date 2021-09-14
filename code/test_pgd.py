@@ -21,8 +21,8 @@ parser.add_argument('--dropout',                        type=float, default=0.5,
 parser.add_argument('--train_groc',                     type=bool,  default=False,                                                                                                                                               help='control if train the groc')
 parser.add_argument('--groc_with_pgd',                  type=bool,  default=True,                                                                                                                                                help='control if train the groc')
 parser.add_argument('--groc_with_embed_attack',         type=bool,  default=False,                                                                                                                                               help='control if train the groc')
-parser.add_argument('--pgd_attack',                     type=bool,  default=False,                                                                                                                                               help='PDG attack and evaluate')
-parser.add_argument('--embedding_attack',               type=bool,  default=False,                                                                                                                                               help='PDG attack and evaluate')
+parser.add_argument('--pgd_attack',                     type=bool,  default=False,                                                                                                                                               help='PGD attack and evaluate')
+parser.add_argument('--embedding_attack',               type=bool,  default=False,                                                                                                                                               help='PGD attack and evaluate')
 parser.add_argument('--random_perturb',                 type=bool,  default=False,                                                                                                                                               help='perturb adj randomly and compare to PGD')
 parser.add_argument('--train_groc_casade',              type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
 parser.add_argument('--loss_weight_bpr',                type=float, default=0.9,                                                                                                                                                 help='train loss with learnable weight between 2 losses')
@@ -34,7 +34,7 @@ parser.add_argument('--embed_attack_method',            type=str,   default='Gra
 parser.add_argument('--path_modified_adj',              type=str,   default=os.path.abspath(os.path.dirname(os.getcwd())) + '/data/modified_adj_{}.pt',                                                                          help='path where modified adj matrix are saved')
 parser.add_argument('--modified_adj_name',              type=list,  default=['a_02', 'a_04', 'a_06', 'a_08', 'a_1', 'a_12', 'a_14', 'a_16', 'a_18', 'a_2'],                                                                      help='we attack adj twice for GROC training so we will have 2 modified adj matrix. In order to distinguish them we set a flag to save them independently')
 parser.add_argument('--modified_adj_name_with_rdm_ptb', type=list,  default=['a_02_w_r', 'a_04_w_r', 'a_06_w_r', 'a_08_w_r', 'a_1_w_r', 'a_12_w_r', 'a_14_w_r', 'a_16_w_r', 'a_18_w_r', 'a_2_w_r'],                              help='we attack adj twice for GROC training, 1st random 2nd PGD.')
-parser.add_argument('--perturb_strength_list',          type=list,  default=[10, 5, 3.33, 2.5, 2, 1.67, 1.42, 1.25, 1.11, 1],                                                                                                    help='2 perturb strength for 2 PDG attacks')
+parser.add_argument('--perturb_strength_list',          type=list,  default=[10, 5, 3.33, 2.5, 2, 1.67, 1.42, 1.25, 1.11, 1],                                                                                                    help='2 perturb strength for 2 PGD attacks')
 parser.add_argument('--modified_adj_id',                type=int,   default=0,                                                                                                                                                   help='select adj matrix from modified adj matrix ids')
 parser.add_argument('--path_modified_models',           type=str,   default=os.path.abspath(os.path.dirname(os.getcwd())) + '/data/modified_model_{}.pt',                                                                        help='path where modified model is saved')
 parser.add_argument('--modified_models_name',           type=list,  default=['02', '04', '06', '08', '1', '12', '14', '16', '18', '2'],                                                                                          help='list of flags for modified models')
@@ -127,8 +127,8 @@ if args.train_groc:
 
     print("=================================================")
 
-if args.pdg_attack:
-    print("train model with pdg attack")
+if args.pgd_attack:
+    print("train model with pgd attack")
     print("=================================================")
     # Setup Attack Model
     modified_adj = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
