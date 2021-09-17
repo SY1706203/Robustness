@@ -19,8 +19,6 @@ parser.add_argument('--weight_decay',                   type=float, default=5e-4
 parser.add_argument('--hidden',                         type=int,   default=16,                                                                                                                                                  help='Number of hidden units.')
 parser.add_argument('--dropout',                        type=float, default=0.5,                                                                                                                                                 help='Dropout rate (1-keep probability).')
 parser.add_argument('--train_groc',                     type=bool,  default=False,                                                                                                                                               help='control if train the groc')
-parser.add_argument('--groc_with_pgd',                  type=bool,  default=True,                                                                                                                                                help='control if train the groc')
-parser.add_argument('--groc_with_embed_attack',         type=bool,  default=False,                                                                                                                                               help='control if train the groc')
 parser.add_argument('--pgd_attack',                     type=bool,  default=False,                                                                                                                                               help='PGD attack and evaluate')
 parser.add_argument('--embedding_attack',               type=bool,  default=False,                                                                                                                                               help='PGD attack and evaluate')
 parser.add_argument('--random_perturb',                 type=bool,  default=False,                                                                                                                                               help='perturb adj randomly and compare to PGD')
@@ -103,12 +101,25 @@ if args.train_groc:
     print("{} edges are different in both random perturbed adj matrix.".format((rdm_modified_adj_a != rdm_modified_adj_b)
                                                                                .sum().detach().cpu().numpy()))
     if not args.train_groc_casade:
-        Recmodel_ = lightgcn.LightGCN(device)
-        Recmodel_ = Recmodel_.to(device)
+        Recmodel_a = lightgcn.LightGCN(device)
+        Recmodel_a = Recmodel_a.to(device)
+
+        Recmodel_b = lightgcn.LightGCN(device)
+        Recmodel_b = Recmodel_b.to(device)
     else:
-        Recmodel_ = Recmodel
-    groc = GROC_loss(Recmodel, Recmodel_, args, users, posItems, negItems)
-    groc.groc_train(data_len, adj, rdm_modified_adj_a, rdm_modified_adj_b, perturbations, users)
+        Recmodel_a = Recmodel
+        Recmodel_b = None
+    groc = GROC_loss(Recmodel, Recmodel_a, Recmodel_b, args, users, posItems, negItems)
+    groc.attack_adjs(rdm_modified_adj_a, rdm_modified_adj_b, perturbations, users)
+    print("===========================")
+    print("Train model_a on modified_adj_a")
+    groc.groc_train(data_len, rdm_modified_adj_a, rdm_modified_adj_b, groc.modified_adj_a, groc.trn_model_a,
+                    perturbations, users)
+    if not args.train_groc_casade:
+        print("===========================")
+        print("Train model_b on modified_adj_b")
+        groc.groc_train(data_len, rdm_modified_adj_a, rdm_modified_adj_b, groc.modified_adj_b, groc.trn_model_b,
+                        perturbations, users)
     modified_adj_a, modified_adj_b = groc.modified_adj_a, groc.modified_adj_b
 
     print("original model performance on original adjacency matrix:")
@@ -118,12 +129,12 @@ if args.train_groc:
 
     print("trn_model performance after GROC learning on modified adjacency matrix A:")
     print("===========================")
-    Procedure.Test(dataset, groc.trn_model, 100, normalize_adj_tensor(modified_adj_a), None, 0)
+    Procedure.Test(dataset, groc.trn_model_a, 100, normalize_adj_tensor(modified_adj_a), None, 0)
     print("===========================")
 
     print("trn_model performance after GROC learning on modified adjacency matrix B:")
     print("===========================")
-    Procedure.Test(dataset, groc.trn_model, 100, normalize_adj_tensor(modified_adj_b), None, 0)
+    Procedure.Test(dataset, groc.trn_model_b, 100, normalize_adj_tensor(modified_adj_b), None, 0)
 
     print("=================================================")
 
