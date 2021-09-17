@@ -101,6 +101,8 @@ class GROC_loss:
             negItems_ = self.negItems.to(self.device)
             users_, posItems_, negItems_ = utils.shuffle(users_, posItems_, negItems_)
             aver_loss = 0.
+            aver_bpr_loss = 0.
+            aver_dcl_loss = 0.
             for (batch_i, (batch_users, batch_pos, batch_neg)) \
                     in enumerate(utils.minibatch(users_, posItems_, negItems_, batch_size=self.args.batch_size)):
                 if self.args.train_groc_casade:
@@ -108,13 +110,23 @@ class GROC_loss:
                 else:
                     bpr_loss, reg_loss = model.bpr_loss(modified_adj, batch_users, batch_pos, batch_neg)
                     reg_loss = reg_loss * model.weight_decay
-                    loss = self.args.loss_weight_bpr * bpr_loss + reg_loss + (1 - self.args.loss_weight_bpr) * self.groc_loss(model, batch_users, batch_pos)
+                    dcl_loss = self.groc_loss(model, batch_users, batch_pos)
+                    loss = self.args.loss_weight_bpr * bpr_loss + reg_loss + (1 - self.args.loss_weight_bpr) * dcl_loss
 
                 loss.backward()
                 optimizer.step()
                 scheduler.step()
 
                 aver_loss += loss.cpu().item()
+                if not self.args.train_groc_casade:
+                    aver_bpr_loss += bpr_loss.cpu().item()
+                    aver_dcl_loss += dcl_loss.cpu().item()
+
             aver_loss = aver_loss / self.total_batch
+            aver_bpr_loss = aver_bpr_loss / self.total_batch
+            aver_dcl_loss = aver_dcl_loss / self.total_batch
             if i % 10 == 0:
                 print("GROC Loss: ", aver_loss)
+                if not self.args.train_groc_casade:
+                    print("BPR Loss: ", aver_bpr_loss)
+                    print("DCL Loss: ", aver_dcl_loss)
