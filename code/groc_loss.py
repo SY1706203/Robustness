@@ -8,11 +8,9 @@ from utils_attack import attack_model
 
 
 class GROC_loss:
-    def __init__(self, ori_model, vanila_model_a, vanila_model_b, args, users, posItems, negItems):
+    def __init__(self, ori_model, args, users, posItems, negItems):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.ori_model = ori_model
-        self.trn_model_a = vanila_model_a
-        self.trn_model_b = vanila_model_b
         self.args = args
         self.users = users
         self.posItems = posItems

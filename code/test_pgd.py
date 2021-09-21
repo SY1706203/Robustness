@@ -83,10 +83,6 @@ if args.random_perturb:
     print("=================================================")
 
 if args.train_groc:
-    print("original model performance on original adjacency matrix:")
-    print("===========================")
-    Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(adj), None, 0)
-    print("===========================")
     print("Train GROC loss")
     print("=================================================")
     rdm_modified_adj_a = attack_randomly(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
@@ -109,16 +105,16 @@ if args.train_groc:
     else:
         Recmodel_a = Recmodel
         Recmodel_b = None
-    groc = GROC_loss(Recmodel, Recmodel_a, Recmodel_b, args, users, posItems, negItems)
+    groc = GROC_loss(Recmodel, args, users, posItems, negItems)
     groc.attack_adjs(rdm_modified_adj_a, rdm_modified_adj_b, perturbations, users)
     print("===========================")
     print("Train model_a on modified_adj_a")
-    groc.groc_train(data_len, rdm_modified_adj_a, rdm_modified_adj_b, groc.modified_adj_a, groc.trn_model_a,
+    groc.groc_train(data_len, rdm_modified_adj_a, rdm_modified_adj_b, groc.modified_adj_a, Recmodel_a,
                     perturbations, users)
     if not args.train_groc_casade:
         print("===========================")
         print("Train model_b on modified_adj_b")
-        groc.groc_train(data_len, rdm_modified_adj_a, rdm_modified_adj_b, groc.modified_adj_b, groc.trn_model_b,
+        groc.groc_train(data_len, rdm_modified_adj_a, rdm_modified_adj_b, groc.modified_adj_b, Recmodel_b,
                         perturbations, users)
     modified_adj_a, modified_adj_b = groc.modified_adj_a, groc.modified_adj_b
 
@@ -129,12 +125,12 @@ if args.train_groc:
 
     print("trn_model performance after GROC learning on modified adjacency matrix A:")
     print("===========================")
-    Procedure.Test(dataset, groc.trn_model_a, 100, normalize_adj_tensor(modified_adj_a), None, 0)
+    Procedure.Test(dataset, Recmodel_a, 100, normalize_adj_tensor(modified_adj_a), None, 0)
     print("===========================")
 
     print("trn_model performance after GROC learning on modified adjacency matrix B:")
     print("===========================")
-    Procedure.Test(dataset, groc.trn_model_b, 100, normalize_adj_tensor(modified_adj_b), None, 0)
+    Procedure.Test(dataset, Recmodel_b, 100, normalize_adj_tensor(modified_adj_b), None, 0)
 
     print("=================================================")
 
