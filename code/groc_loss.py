@@ -89,8 +89,10 @@ class GROC_loss:
         optimizer = optim.Adam(model.parameters(), lr=model.lr,
                                weight_decay=model.weight_decay)
 
-        scheduler = scheduler_groc(optimizer, data_len_, self.args.warmup_steps, self.args.batch_size,
-                                   self.args.groc_epochs)
+        if self.args.use_scheduler:
+
+            scheduler = scheduler_groc(optimizer, data_len_, self.args.warmup_steps, self.args.batch_size,
+                                       self.args.groc_epochs)
 
         for i in range(self.args.groc_epochs):
             optimizer.zero_grad()
@@ -113,7 +115,8 @@ class GROC_loss:
 
                 loss.backward()
                 optimizer.step()
-                scheduler.step()
+                if self.args.use_scheduler:
+                    scheduler.step()
 
                 aver_loss += loss.cpu().item()
                 if not self.args.train_groc_casade:

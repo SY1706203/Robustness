@@ -39,6 +39,7 @@ def parse_args():
     parser.add_argument('--comment', type=str, default="lgn")
     parser.add_argument('--groc_epochs', type=int, default=100, help='Number of epochs to train.')
     parser.add_argument('--train_groc_casade', type=bool, default=False, help='train a pre-trained GCN on GROC loss')
+    parser.add_argument('--use_scheduler', type=bool, default=False, help='use scheduler for learning rate decay')
     parser.add_argument('--load', type=int, default=0)
     parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--multicore', type=int, default=0, help='whether we use multiprocessing or not in test')
