@@ -14,7 +14,7 @@ parser.add_argument('--seed',                           type=int,   default=15, 
 parser.add_argument('--warmup_steps',                   type=int,   default=10000,                                                                                                                                               help='Warm up steps for scheduler.')
 parser.add_argument('--batch_size',                     type=int,   default=2048,                                                                                                                                                help='BS.')
 parser.add_argument('--groc_epochs',                    type=int,   default=100,                                                                                                                                                 help='Number of epochs to train.')
-parser.add_argument('--lr',                             type=float, default=0.01,                                                                                                                                                help='Initial learning rate.')
+parser.add_argument('--lr',                             type=float, default=0.001,                                                                                                                                                help='Initial learning rate.')
 parser.add_argument('--weight_decay',                   type=float, default=5e-4,                                                                                                                                                help='Weight decay (L2 loss on parameters).')
 parser.add_argument('--hidden',                         type=int,   default=16,                                                                                                                                                  help='Number of hidden units.')
 parser.add_argument('--dropout',                        type=float, default=0.5,                                                                                                                                                 help='Dropout rate (1-keep probability).')
@@ -23,6 +23,8 @@ parser.add_argument('--pgd_attack',                     type=bool,  default=Fals
 parser.add_argument('--embedding_attack',               type=bool,  default=False,                                                                                                                                               help='PGD attack and evaluate')
 parser.add_argument('--random_perturb',                 type=bool,  default=False,                                                                                                                                               help='perturb adj randomly and compare to PGD')
 parser.add_argument('--train_groc_casade',              type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
+parser.add_argument('--groc_rdm_adj_attack',            type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
+parser.add_argument('--groc_embed_mask',                type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
 parser.add_argument('--use_scheduler',                  type=bool,  default=False,                                                                                                                                               help='Use scheduler for learning rate decay')
 parser.add_argument('--loss_weight_bpr',                type=float, default=0.9,                                                                                                                                                 help='train loss with learnable weight between 2 losses')
 parser.add_argument('--dataset',                        type=str,   default='citeseer',                                                                                                             choices=['MOOC'],            help='dataset')
@@ -32,9 +34,16 @@ parser.add_argument('--model',                          type=str,   default='PGD
 parser.add_argument('--embed_attack_method',            type=str,   default='Gradient',                                                                                                             choices=['Gradient', 'rdm'], help='model variant')
 parser.add_argument('--path_modified_adj',              type=str,   default=os.path.abspath(os.path.dirname(os.getcwd())) + '/data/modified_adj_{}.pt',                                                                          help='path where modified adj matrix are saved')
 parser.add_argument('--modified_adj_name',              type=list,  default=['a_02', 'a_04', 'a_06', 'a_08', 'a_1', 'a_12', 'a_14', 'a_16', 'a_18', 'a_2'],                                                                      help='we attack adj twice for GROC training so we will have 2 modified adj matrix. In order to distinguish them we set a flag to save them independently')
-parser.add_argument('--modified_adj_name_with_rdm_ptb', type=list,  default=['a_02_w_r', 'a_04_w_r', 'a_06_w_r', 'a_08_w_r', 'a_1_w_r', 'a_12_w_r', 'a_14_w_r', 'a_16_w_r', 'a_18_w_r', 'a_2_w_r'],                              help='we attack adj twice for GROC training, 1st random 2nd PGD.')
+parser.add_argument('--modified_adj_name_with_rdm_ptb_a', type=list,  default=['a_02_w_r', 'a_04_w_r', 'a_06_w_r', 'a_08_w_r', 'a_1_w_r', 'a_12_w_r', 'a_14_w_r', 'a_16_w_r', 'a_18_w_r', 'a_2_w_r'],                              help='we attack adj twice for GROC training, 1st random 2nd PGD.')
+parser.add_argument('--modified_adj_name_with_rdm_ptb_b', type=list,  default=['a_02_w_r_b', 'a_04_w_r_b', 'a_06_w_r_b', 'a_08_w_r_b', 'a_1_w_r_b', 'a_12_w_r_b', 'a_14_w_r_b', 'a_16_w_r_b', 'a_18_w_r_b', 'a_2_w_r_b'],                             help='we attack adj twice for GROC training, 1st random 2nd PGD.')
+parser.add_argument('--modified_adj_name_with_masked_M_a', type=list,  default=['a_02_mM_a', 'a_04_mM_a', 'a_06_mM_a', 'a_08_mM_a', 'a_1_mM_a', 'a_12_mM_a', 'a_14_mM_a', 'a_16_mM_a', 'a_18_mM_a', 'a_2_mM_a'],                              help='masked_M indicates masked model(embedding mask)')
+parser.add_argument('--modified_adj_name_with_masked_M_b', type=list,  default=['a_02_mM_b', 'a_04_mM_b', 'a_06_mM_b', 'a_08_mM_b', 'a_1_mM_b', 'a_12_mM_b', 'a_14_mM_b', 'a_16_mM_b', 'a_18_mM_b', 'a_2_mM_b'],                             help='masked_M indicates masked model(embedding mask)')
+parser.add_argument('--mask_prob_list',              type=list,  default=[0.1, 0.2, 0.3, 0.4],                              help='we attack adj twice for GROC training, 1st random 2nd PGD.')
+parser.add_argument('--mask_prob_idx',              type=int,  default=1,                              help='we attack adj twice for GROC training, 1st random 2nd PGD.')
 parser.add_argument('--perturb_strength_list',          type=list,  default=[10, 5, 3.33, 2.5, 2, 1.67, 1.42, 1.25, 1.11, 1],                                                                                                    help='2 perturb strength for 2 PGD attacks')
 parser.add_argument('--modified_adj_id',                type=int,   default=0,                                                                                                                                                   help='select adj matrix from modified adj matrix ids')
+parser.add_argument('--masked_model_a_id',                type=int,   default=2,                                                                                                                                                   help='select adj matrix from modified adj matrix ids')
+parser.add_argument('--masked_model_b_id',                type=int,   default=1,                                                                                                                                                   help='select adj matrix from modified adj matrix ids')
 parser.add_argument('--path_modified_models',           type=str,   default=os.path.abspath(os.path.dirname(os.getcwd())) + '/data/modified_model_{}.pt',                                                                        help='path where modified model is saved')
 parser.add_argument('--modified_models_name',           type=list,  default=['02', '04', '06', '08', '1', '12', '14', '16', '18', '2'],                                                                                          help='list of flags for modified models')
 parser.add_argument('--eps',                            type=list,  default=[0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2],                                                                                                      help='attack restriction eps for embedding attack')
@@ -86,53 +95,76 @@ if args.random_perturb:
 if args.train_groc:
     print("Train GROC loss")
     print("=================================================")
-    rdm_modified_adj_a = attack_randomly(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
-                                         args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
-    rdm_modified_adj_b = attack_randomly(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
-                                         args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
-    try:
-        print("2 random perturbed adj matrix ain't same: ", ~(rdm_modified_adj_a == rdm_modified_adj_b).all())
-    except AttributeError:
-        print("2 random perturbed adj matrix are same.")
+    if args.groc_rdm_adj_attack:
+        print("Mode: Random attack + PGD attack")
+        rdm_modified_adj_a = attack_randomly(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
+                                             args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+        rdm_modified_adj_b = attack_randomly(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
+                                             args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+        try:
+            print("2 random perturbed adj matrix ain't same: ", ~(rdm_modified_adj_a == rdm_modified_adj_b).all())
+        except AttributeError:
+            print("2 random perturbed adj matrix are same.")
 
-    print("{} edges are different in both random perturbed adj matrix.".format((rdm_modified_adj_a != rdm_modified_adj_b)
-                                                                               .sum().detach().cpu().numpy()))
-    if not args.train_groc_casade:
-        Recmodel_a = lightgcn.LightGCN(device)
-        Recmodel_a = Recmodel_a.to(device)
+        print("{} edges are different in both random perturbed adj matrix.".format((rdm_modified_adj_a != rdm_modified_adj_b)
+                                                                                   .sum().detach().cpu().numpy()))
+        if not args.train_groc_casade:
+            Recmodel_a = lightgcn.LightGCN(device)
+            Recmodel_a = Recmodel_a.to(device)
 
-        Recmodel_b = lightgcn.LightGCN(device)
-        Recmodel_b = Recmodel_b.to(device)
-    else:
-        Recmodel_a = Recmodel
-        Recmodel_b = None
-    groc = GROC_loss(Recmodel, args, users, posItems, negItems)
-    groc.attack_adjs(rdm_modified_adj_a, rdm_modified_adj_b, perturbations, users)
-    print("===========================")
-    print("Train model_a on modified_adj_a")
-    groc.groc_train(data_len, rdm_modified_adj_a, rdm_modified_adj_b, groc.modified_adj_a, Recmodel_a,
-                    perturbations, users)
-    if not args.train_groc_casade:
+            Recmodel_b = lightgcn.LightGCN(device)
+            Recmodel_b = Recmodel_b.to(device)
+        else:
+            Recmodel_a = Recmodel
+            Recmodel_b = None
+        groc = GROC_loss(Recmodel, args, users, posItems, negItems)
+        groc.attack_adjs(rdm_modified_adj_a, rdm_modified_adj_b, perturbations, users)
         print("===========================")
-        print("Train model_b on modified_adj_b")
-        groc.groc_train(data_len, rdm_modified_adj_a, rdm_modified_adj_b, groc.modified_adj_b, Recmodel_b,
-                        perturbations, users)
-    modified_adj_a, modified_adj_b = groc.modified_adj_a, groc.modified_adj_b
+        print("Train model_a on modified_adj_a")
+        groc.groc_train(data_len, groc.modified_adj_a, Recmodel_a, users)
+        if not args.train_groc_casade:
+            print("===========================")
+            print("Train model_b on modified_adj_b")
+            groc.groc_train(data_len, groc.modified_adj_b, Recmodel_b, users)
+        modified_adj_a, modified_adj_b = groc.modified_adj_a, groc.modified_adj_b
 
-    print("original model performance on original adjacency matrix:")
-    print("===========================")
-    Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(adj), None, 0)
-    print("===========================")
+        print("original model performance on original adjacency matrix:")
+        print("===========================")
+        Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(adj), None, 0)
+        print("===========================")
 
-    print("trn_model performance after GROC learning on modified adjacency matrix A:")
-    print("===========================")
-    Procedure.Test(dataset, Recmodel_a, 100, normalize_adj_tensor(modified_adj_a), None, 0)
-    print("===========================")
+        print("trn_model performance after GROC learning on modified adjacency matrix A:")
+        print("===========================")
+        Procedure.Test(dataset, Recmodel_a, 100, normalize_adj_tensor(modified_adj_a), None, 0)
+        print("===========================")
 
-    print("trn_model performance after GROC learning on modified adjacency matrix B:")
-    print("===========================")
-    Procedure.Test(dataset, Recmodel_b, 100, normalize_adj_tensor(modified_adj_b), None, 0)
+        print("trn_model performance after GROC learning on modified adjacency matrix B:")
+        print("===========================")
+        Procedure.Test(dataset, Recmodel_b, 100, normalize_adj_tensor(modified_adj_b), None, 0)
 
+    if args.groc_embed_mask:
+        assert args.train_groc_casade, "You want to fine-tune a pre-trained GCN but the parameter train_groc_casade is set to False."
+        print("Mode: Embedding mask + PGD attack")
+        groc = GROC_loss(Recmodel, args, users, posItems, negItems)
+        groc.attack_adjs(adj, adj, perturbations, users, args.mask_prob_list[args.masked_model_a_id], args.mask_prob_list[args.masked_model_b_id])
+        groc.groc_train(data_len, adj, Recmodel, users)
+
+        modified_adj_a, modified_adj_b = groc.modified_adj_a, groc.modified_adj_b
+
+        print("original model performance on original adjacency matrix:")
+        print("===========================")
+        Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(adj), None, 0)
+        print("===========================")
+
+        print("ori model performance after GROC learning on modified adjacency matrix A:")
+        print("===========================")
+        Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(modified_adj_a), None, 0)
+        print("===========================")
+        print("ori model performance after GROC learning on modified adjacency matrix B:")
+        print("===========================")
+        Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(modified_adj_b), None, 0)
+
+    print("=================================================")
     print("=================================================")
 
 if args.pgd_attack:

@@ -54,6 +54,7 @@ def parse_args():
                         help='select model matrix from modified model matrix ids')
     parser.add_argument('--T_groc', type=float, default=0.7, help='param temperature for GROC')
     parser.add_argument('--embedding_attack', type=bool, default=False, help='PDG attack and evaluate')
+    parser.add_argument('--groc_embed_mask', type=bool, default=False, help='train a pre-trained GCN on GROC loss')
     parser.add_argument('--pdg_attack', type=bool, default=False, help='PDG attack and evaluate')
     parser.add_argument('--random_perturb', type=bool, default=False, help='perturb adj randomly and compare to PGD')
 

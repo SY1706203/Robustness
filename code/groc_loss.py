@@ -1,4 +1,5 @@
 import torch
+import pickle
 import torch.nn as nn
 import torch.optim as optim
 from utils import scheduler_groc
@@ -17,6 +18,8 @@ class GROC_loss:
         self.negItems = negItems
         self.modified_adj_a = None
         self.modified_adj_b = None
+        self.masked_model_a = None
+        self.masked_model_b = None
         self.total_batch = None
 
     @staticmethod
@@ -62,35 +65,71 @@ class GROC_loss:
 
         return torch.sum(torch.add(loss_vec_a, loss_vec_b)) / (2 * loss_vec_a.size(0))
 
-    def attack_adjs(self, adj_a, adj_b, perturbations, users):
-        self.modified_adj_a = attack_model(self.ori_model, adj_a, perturbations, self.args.path_modified_adj,
-                                           self.args.modified_adj_name_with_rdm_ptb, self.args.modified_adj_id,
-                                           self.users,
-                                           self.posItems, self.negItems, self.ori_model.num_users, self.device)
+    def attack_adjs(self, adj_a, adj_b, perturbations, users, mask_prob_a=0, mask_prob_b=0):
+        if self.args.groc_rdm_adj_attack:
+            self.modified_adj_a = attack_model(self.ori_model, adj_a, perturbations, self.args.path_modified_adj,
+                                               self.args.modified_adj_name_with_rdm_ptb_a, self.args.modified_adj_id,
+                                               self.users, self.posItems, self.negItems, self.ori_model.num_users,
+                                               self.device)
 
-        self.modified_adj_b = attack_model(self.ori_model, adj_b, perturbations, self.args.path_modified_adj,
-                                           ['a_02_w_r_b', 'a_04_w_r_b', 'a_06_w_r_b', 'a_08_w_r_b', 'a_1_w_r_b',
-                                            'a_12_w_r_b', 'a_14_w_r_b', 'a_16_w_r_b', 'a_18_w_r_b', 'a_2_w_r_b'],
-                                           self.args.modified_adj_id, self.users, self.posItems, self.negItems,
-                                           self.ori_model.num_users, self.device)
+            self.modified_adj_b = attack_model(self.ori_model, adj_b, perturbations, self.args.path_modified_adj,
+                                               self.args.modified_adj_name_with_rdm_ptb_b, self.args.modified_adj_id,
+                                               self.users, self.posItems, self.negItems, self.ori_model.num_users,
+                                               self.device)
 
-        try:
-            print("modified adjacency matrix are not same:", (self.modified_adj_a == self.modified_adj_b).all())
-        except AttributeError:
-            print("2 modified adjacency matrix are same. Check your perturbation value")
+            try:
+                print("modified adjacency matrix are not same:", (self.modified_adj_a == self.modified_adj_b).all())
+            except AttributeError:
+                print("2 modified adjacency matrix are same. Check your perturbation value")
+
+        if self.args.groc_embed_mask:
+            self.masked_model_a = self.mask_embeddings(mask_prob_a)
+            self.masked_model_b = self.mask_embeddings(mask_prob_b)
+
+            self.modified_adj_a = attack_model(self.masked_model_a, adj_a, perturbations, self.args.path_modified_adj,
+                                               self.args.modified_adj_name_with_masked_M_a, self.args.modified_adj_id,
+                                               self.users, self.posItems, self.negItems, self.ori_model.num_users,
+                                               self.device)
+
+            self.modified_adj_b = attack_model(self.masked_model_b, adj_a, perturbations, self.args.path_modified_adj,
+                                               self.args.modified_adj_name_with_masked_M_b, self.args.modified_adj_id,
+                                               self.users, self.posItems, self.negItems, self.ori_model.num_users,
+                                               self.device)
 
         self.total_batch = len(users) // self.args.batch_size + 1
 
-    def groc_train(self, data_len_, adj_a, adj_b, modified_adj, model, perturbations, users):
-        if self.modified_adj_a is None or self.modified_adj_b is None:
-            self.attack_adjs(adj_a, adj_b, perturbations, users)
+    def mask_embeddings(self, mask_prob):
+        mask = torch.FloatTensor(self.ori_model.latent_dim).uniform_() < mask_prob
+        mask = mask.to(self.device)
 
+        ori_embedding_user = self.ori_model.embedding_user.weight.data.clone()
+        ori_embedding_item = self.ori_model.embedding_item.weight.data.clone()
+
+        ori_embedding_user = ori_embedding_user.to(self.device)
+        ori_embedding_item = ori_embedding_item.to(self.device)
+
+        user_emb = self.ori_model.embedding_user.weight.data.clone().masked_fill_(mask, 0)
+        item_emb = self.ori_model.embedding_item.weight.data.clone().masked_fill_(mask, 0)
+
+        user_emb = user_emb.to(self.device)
+        item_emb = item_emb.to(self.device)
+
+        self.ori_model.embedding_user.weight.data.copy_(user_emb)
+        self.ori_model.embedding_item.weight.data.copy_(item_emb)
+
+        masked_model = pickle.loads(pickle.dumps(self.ori_model))
+
+        self.ori_model.embedding_user.weight.data.copy_(ori_embedding_user)
+        self.ori_model.embedding_item.weight.data.copy_(ori_embedding_item)
+
+        return masked_model
+
+    def groc_train(self, data_len_, modified_adj, model, users):
         model.train()
         optimizer = optim.Adam(model.parameters(), lr=model.lr,
                                weight_decay=model.weight_decay)
 
         if self.args.use_scheduler:
-
             scheduler = scheduler_groc(optimizer, data_len_, self.args.warmup_steps, self.args.batch_size,
                                        self.args.groc_epochs)
 
@@ -104,7 +143,8 @@ class GROC_loss:
             aver_bpr_loss = 0.
             aver_dcl_loss = 0.
             for (batch_i, (batch_users, batch_pos, batch_neg)) \
-                    in enumerate(utils.minibatch(users_, posItems_, negItems_, batch_size=self.args.batch_size)):
+                    in enumerate(utils.minibatch(users_, posItems_, negItems_,
+                                                 batch_size=10 if self.args.train_groc_casade else self.args.batch_size)):
                 if self.args.train_groc_casade:
                     loss = self.groc_loss(model, batch_users, batch_pos)
                 else:
@@ -124,8 +164,10 @@ class GROC_loss:
                     aver_dcl_loss += dcl_loss.cpu().item()
 
             aver_loss = aver_loss / self.total_batch
-            aver_bpr_loss = aver_bpr_loss / self.total_batch
-            aver_dcl_loss = aver_dcl_loss / self.total_batch
+
+            if not self.args.train_groc_casade:
+                aver_bpr_loss = aver_bpr_loss / self.total_batch
+                aver_dcl_loss = aver_dcl_loss / self.total_batch
             if i % 10 == 0:
                 print("GROC Loss: ", aver_loss)
                 if not self.args.train_groc_casade:
