@@ -155,8 +155,6 @@ if args.train_groc:
         groc = GROC_loss(Recmodel, adj, args)
         groc.groc_train()
 
-        modified_adj_a, modified_adj_b = groc.modified_adj_a, groc.modified_adj_b
-
         print("original model performance on original adjacency matrix:")
         print("===========================")
         Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(adj), None, 0)
@@ -164,11 +162,10 @@ if args.train_groc:
 
         print("ori model performance after GROC learning on modified adjacency matrix A:")
         print("===========================")
+        modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
+                                      args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
         Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(modified_adj_a), None, 0)
         print("===========================")
-        print("ori model performance after GROC learning on modified adjacency matrix B:")
-        print("===========================")
-        Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(modified_adj_b), None, 0)
 
     print("=================================================")
     print("=================================================")
