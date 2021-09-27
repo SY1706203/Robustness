@@ -165,6 +165,9 @@ if args.train_groc:
         modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
                                       args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
         Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(modified_adj_a), None, 0)
+
+        print("save model")
+        torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) + '/data/LightGCN_after_GROC.pt')
         print("===========================")
 
     print("=================================================")
