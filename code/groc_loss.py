@@ -1,39 +1,38 @@
 import torch
-import pickle
+import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 from utils import scheduler_groc
 import utils
 import torch.nn.functional as F
-from utils_attack import attack_model
 
 
-class GROC_loss:
-    def __init__(self, ori_model, args, users, posItems, negItems):
+class GROC_loss(nn.Module):
+    def __init__(self, ori_model, ori_adj, args):
+        super(GROC_loss, self).__init__()
+        self.ori_adj = ori_adj
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.ori_model = ori_model
         self.args = args
-        self.users = users
-        self.posItems = posItems
-        self.negItems = negItems
-        self.modified_adj_a = None
-        self.modified_adj_b = None
-        self.masked_model_a = None
-        self.masked_model_b = None
+        self.num_users = self.ori_model.num_users
+        self.num_items = self.ori_model.num_items
         self.total_batch = None
 
-    @staticmethod
-    def get_embed_groc(trn_model, modified_adj, users_, poss):
-        (users_emb, pos_emb, _, _) = trn_model.getEmbedding(modified_adj, users_.long(), poss.long())
+    def get_embed_groc(self, trn_model, modified_adj, users, items, mask):
 
-        users_emb = nn.functional.normalize(users_emb, dim=1)
-        pos_emb = nn.functional.normalize(pos_emb, dim=1)
+        adj_norm = utils.normalize_adj_tensor(modified_adj)
+        modified_adj = adj_norm.to(self.device)
 
-        return torch.cat([users_emb, pos_emb])
+        (users_emb, item_emb, _, _) = trn_model.getEmbedding(modified_adj, users.long(), items.long(), query_groc=True)
 
-    def groc_loss_vec(self, trn_model, modified_adj_a, modified_adj_b, users_, poss):
-        batch_emb_a = self.get_embed_groc(trn_model, modified_adj_a, users_, poss)
-        batch_emb_b = self.get_embed_groc(trn_model, modified_adj_b, users_, poss)
+        users_emb = nn.functional.normalize(users_emb, dim=1).masked_fill_(mask, 0)
+        item_emb = nn.functional.normalize(item_emb, dim=1).masked_fill_(mask, 0)
+
+        return torch.cat([users_emb, item_emb])
+
+    def groc_loss_vec(self, trn_model, modified_adj_a, modified_adj_b, users, items, mask_1, mask_2):
+        batch_emb_a = self.get_embed_groc(trn_model, modified_adj_a, users, items, mask_1)
+        batch_emb_b = self.get_embed_groc(trn_model, modified_adj_b, users, items, mask_2)
 
         contrastive_similarity = torch.exp(torch.sum(batch_emb_a * batch_emb_b, dim=-1) / self.args.T_groc)
 
@@ -59,117 +58,94 @@ class GROC_loss:
 
         return loss_vec
 
-    def groc_loss(self, trn_model, users_, poss):
-        loss_vec_a = self.groc_loss_vec(trn_model, self.modified_adj_a, self.modified_adj_b, users_, poss)
-        loss_vec_b = self.groc_loss_vec(trn_model, self.modified_adj_b, self.modified_adj_a, users_, poss)
+    def groc_loss(self, trn_model, modified_adj_a, modified_adj_b, users, items, mask_1, mask_2):
+        loss_vec_a = self.groc_loss_vec(trn_model, modified_adj_a, modified_adj_b, users, items, mask_1, mask_2)
+        loss_vec_b = self.groc_loss_vec(trn_model, modified_adj_b, modified_adj_a, users, items, mask_1, mask_2)
 
         return torch.sum(torch.add(loss_vec_a, loss_vec_b)) / (2 * loss_vec_a.size(0))
 
-    def attack_adjs(self, adj_a, adj_b, perturbations, users, mask_prob_a=0, mask_prob_b=0):
-        if self.args.groc_rdm_adj_attack:
-            self.modified_adj_a = attack_model(self.ori_model, adj_a, perturbations, self.args.path_modified_adj,
-                                               self.args.modified_adj_name_with_rdm_ptb_a, self.args.modified_adj_id,
-                                               self.users, self.posItems, self.negItems, self.ori_model.num_users,
-                                               self.device)
+    def get_modified_adj_for_insert(self, batch_nodes):
+        """
+        reset flag is a flag that indicate the adj will insert edges(flag==False, do sum) or set the adj back to original adj
+        """
+        nodes_num = len(batch_nodes)
+        num_edges_insertion = int(nodes_num * (nodes_num - 1) / 2)
+        index_array = np.stack((batch_nodes.cpu().numpy().repeat(nodes_num), np.tile(batch_nodes.cpu().numpy(), nodes_num)))
+        adj_with_insert = self.ori_adj.clone().to(self.device)
+        adj_with_insert[index_array[0], index_array[1]] = adj_with_insert[index_array] + 1 / num_edges_insertion
+        adj_with_insert[index_array[1], index_array[0]] = adj_with_insert[index_array] + 1 / num_edges_insertion
 
-            self.modified_adj_b = attack_model(self.ori_model, adj_b, perturbations, self.args.path_modified_adj,
-                                               self.args.modified_adj_name_with_rdm_ptb_b, self.args.modified_adj_id,
-                                               self.users, self.posItems, self.negItems, self.ori_model.num_users,
-                                               self.device)
+        return adj_with_insert.masked_fill_(torch.eye(adj_with_insert.size(0), adj_with_insert.size(0)).bool().to(self.device), 0)
 
-            try:
-                print("modified adjacency matrix are not same:", (self.modified_adj_a == self.modified_adj_b).all())
-            except AttributeError:
-                print("2 modified adjacency matrix are same. Check your perturbation value")
+    def get_modified_adj_with_insert_and_remove_by_gradient(self, remove_prob, insert_prob, batch_all_node, edge_gradient):
+        adj_insert_remove = self.ori_adj.clone().to(self.device)
 
-        if self.args.groc_embed_mask:
-            self.masked_model_a = self.mask_embeddings(mask_prob_a)
-            self.masked_model_b = self.mask_embeddings(mask_prob_b)
+        k_remove = int(remove_prob * adj_insert_remove[batch_all_node].sum())
+        edge_gradient = edge_gradient * self.ori_adj
+        _, indices_rm = torch.topk(edge_gradient, k_remove, largest=False)
+        adj_insert_remove[indices_rm[0], indices_rm[1]] = 0
+        adj_insert_remove[indices_rm[1], indices_rm[0]] = 0
 
-            self.modified_adj_a = attack_model(self.masked_model_a, adj_a, perturbations, self.args.path_modified_adj,
-                                               self.args.modified_adj_name_with_masked_M_a, self.args.modified_adj_id,
-                                               self.users, self.posItems, self.negItems, self.ori_model.num_users,
-                                               self.device)
+        k_insert = int(insert_prob * len(batch_all_node) * (len(batch_all_node) - 1) / 2)
+        _, indices_ir = torch.topk(edge_gradient, k_insert)
+        adj_insert_remove[indices_ir[0], indices_ir[1]] = 1
+        adj_insert_remove[indices_ir[1], indices_ir[0]] = 1
 
-            self.modified_adj_b = attack_model(self.masked_model_b, adj_a, perturbations, self.args.path_modified_adj,
-                                               self.args.modified_adj_name_with_masked_M_b, self.args.modified_adj_id,
-                                               self.users, self.posItems, self.negItems, self.ori_model.num_users,
-                                               self.device)
+        return adj_insert_remove
 
-        self.total_batch = len(users) // self.args.batch_size + 1
-
-    def mask_embeddings(self, mask_prob):
-        mask = torch.FloatTensor(self.ori_model.latent_dim).uniform_() < mask_prob
-        mask = mask.to(self.device)
-
-        ori_embedding_user = self.ori_model.embedding_user.weight.data.clone()
-        ori_embedding_item = self.ori_model.embedding_item.weight.data.clone()
-
-        ori_embedding_user = ori_embedding_user.to(self.device)
-        ori_embedding_item = ori_embedding_item.to(self.device)
-
-        user_emb = self.ori_model.embedding_user.weight.data.clone().masked_fill_(mask, 0)
-        item_emb = self.ori_model.embedding_item.weight.data.clone().masked_fill_(mask, 0)
-
-        user_emb = user_emb.to(self.device)
-        item_emb = item_emb.to(self.device)
-
-        self.ori_model.embedding_user.weight.data.copy_(user_emb)
-        self.ori_model.embedding_item.weight.data.copy_(item_emb)
-
-        masked_model = pickle.loads(pickle.dumps(self.ori_model))
-
-        self.ori_model.embedding_user.weight.data.copy_(ori_embedding_user)
-        self.ori_model.embedding_item.weight.data.copy_(ori_embedding_item)
-
-        return masked_model
-
-    def groc_train(self, data_len_, modified_adj, model, users):
-        model.train()
-        optimizer = optim.Adam(model.parameters(), lr=model.lr,
-                               weight_decay=model.weight_decay)
+    def groc_train(self):
+        self.ori_model.train()
+        embedding_param = []
+        adj_param = []
+        for n, p in self.ori_model.named_parameters():
+            if n.__contains__('embedding'):
+                embedding_param.append(p)
+            else:
+                adj_param.append(p)
+        optimizer = optim.Adam([
+                                    {'params': embedding_param},
+                                    {'params': adj_param, 'lr': 0}
+                                ], lr=self.ori_model.lr, weight_decay=self.ori_model.weight_decay)
 
         if self.args.use_scheduler:
-            scheduler = scheduler_groc(optimizer, data_len_, self.args.warmup_steps, self.args.batch_size,
+            scheduler = scheduler_groc(optimizer, self.num_users+self.num_items, self.args.warmup_steps, self.args.groc_batch_size,
                                        self.args.groc_epochs)
+
+        all_node_index = torch.arange(0, self.num_users + self.num_items, 1).to(self.device)
+        all_node_index = utils.shuffle(all_node_index)
 
         for i in range(self.args.groc_epochs):
             optimizer.zero_grad()
-            users_ = users.to(self.device)
-            posItems_ = self.posItems.to(self.device)
-            negItems_ = self.negItems.to(self.device)
-            users_, posItems_, negItems_ = utils.shuffle(users_, posItems_, negItems_)
             aver_loss = 0.
-            aver_bpr_loss = 0.
-            aver_dcl_loss = 0.
-            for (batch_i, (batch_users, batch_pos, batch_neg)) \
-                    in enumerate(utils.minibatch(users_, posItems_, negItems_,
-                                                 batch_size=10 if self.args.train_groc_casade else self.args.batch_size)):
-                if self.args.train_groc_casade:
-                    loss = self.groc_loss(model, batch_users, batch_pos)
-                else:
-                    bpr_loss, reg_loss = model.bpr_loss(modified_adj, batch_users, batch_pos, batch_neg)
-                    reg_loss = reg_loss * model.weight_decay
-                    dcl_loss = self.groc_loss(model, batch_users, batch_pos)
-                    loss = self.args.loss_weight_bpr * bpr_loss + reg_loss + (1 - self.args.loss_weight_bpr) * dcl_loss
+            for (batch_i, (batch_all_node)) in enumerate(utils.minibatch(all_node_index, batch_size=self.args.groc_batch_size)):
+                user_filter = (batch_all_node < self.num_users).to(self.device)
+                batch_users = torch.masked_select(batch_all_node, user_filter).to(self.device)
+                batch_items = torch.sub(torch.masked_select(batch_all_node, ~user_filter), self.num_users).to(self.device)
+                adj_with_insert = self.get_modified_adj_for_insert(batch_all_node)  # 2 views are same
+                mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1).to(self.device)
+                mask_2 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_2).to(self.device)
 
+                loss_for_grad = self.groc_loss(self.ori_model, adj_with_insert, adj_with_insert, batch_users, batch_items,
+                                               mask_1, mask_2)
+                edge_gradient = torch.autograd.grad(loss_for_grad, self.ori_model.adj, retain_graph=True)[0]
+
+                adj_insert_remove_1 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_1,
+                                                                                               self.args.remove_prob_1,
+                                                                                               batch_all_node, edge_gradient)
+                adj_insert_remove_2 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_2,
+                                                                                               self.args.remove_prob_2,
+                                                                                               batch_all_node, edge_gradient)
+
+                loss = self.groc_loss(self.ori_model, adj_insert_remove_1, adj_insert_remove_2, batch_users, batch_items,
+                                      mask_1, mask_2)
                 loss.backward()
                 optimizer.step()
                 if self.args.use_scheduler:
                     scheduler.step()
 
                 aver_loss += loss.cpu().item()
-                if not self.args.train_groc_casade:
-                    aver_bpr_loss += bpr_loss.cpu().item()
-                    aver_dcl_loss += dcl_loss.cpu().item()
 
             aver_loss = aver_loss / self.total_batch
 
-            if not self.args.train_groc_casade:
-                aver_bpr_loss = aver_bpr_loss / self.total_batch
-                aver_dcl_loss = aver_dcl_loss / self.total_batch
             if i % 10 == 0:
                 print("GROC Loss: ", aver_loss)
-                if not self.args.train_groc_casade:
-                    print("BPR Loss: ", aver_bpr_loss)
-                    print("DCL Loss: ", aver_dcl_loss)

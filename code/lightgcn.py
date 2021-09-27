@@ -18,6 +18,7 @@ class LightGCN(nn.Module):
         self.num_items = dataset.m_item
         self.latent_dim = 64
         self.f = nn.Sigmoid()
+        self.adj = nn.Parameter()
 
         self.tau_plus = 1e-3
         self.T = 0.07
@@ -85,8 +86,15 @@ class LightGCN(nn.Module):
         gamma = torch.sum(inner_pro, dim=1)
         return gamma
 
-    def getEmbedding(self, adj, users, pos_items, delta_u=None, delta_i=None):
-        all_users, all_items = self.computer(adj, delta_u, delta_i)
+    def getEmbedding(self, adj, users, pos_items, delta_u=None, delta_i=None, query_groc=False):
+        """
+        query from GROC means that we want to push adj into computational graph
+        """
+        if query_groc:
+            self.adj.data = adj
+            all_users, all_items = self.computer(self.adj, delta_u, delta_i)
+        else:
+            all_users, all_items = self.computer(adj, delta_u, delta_i)
         users_emb = all_users[users]
         pos_emb = all_items[pos_items]
         # neg_emb = all_items[neg_items]

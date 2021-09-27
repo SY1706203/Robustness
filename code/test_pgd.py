@@ -13,6 +13,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--seed',                           type=int,   default=15,                                                                                                                                                  help='Random seed.')
 parser.add_argument('--warmup_steps',                   type=int,   default=10000,                                                                                                                                               help='Warm up steps for scheduler.')
 parser.add_argument('--batch_size',                     type=int,   default=2048,                                                                                                                                                help='BS.')
+parser.add_argument('--groc_batch_size',                type=int,   default=10,                                                                                                                                                help='BS.')
 parser.add_argument('--groc_epochs',                    type=int,   default=100,                                                                                                                                                 help='Number of epochs to train.')
 parser.add_argument('--lr',                             type=float, default=0.001,                                                                                                                                                help='Initial learning rate.')
 parser.add_argument('--weight_decay',                   type=float, default=5e-4,                                                                                                                                                help='Weight decay (L2 loss on parameters).')
@@ -48,6 +49,12 @@ parser.add_argument('--path_modified_models',           type=str,   default=os.p
 parser.add_argument('--modified_models_name',           type=list,  default=['02', '04', '06', '08', '1', '12', '14', '16', '18', '2'],                                                                                          help='list of flags for modified models')
 parser.add_argument('--eps',                            type=list,  default=[0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2],                                                                                                      help='attack restriction eps for embedding attack')
 parser.add_argument('--modified_models_id',             type=int,   default=0,                                                                                                                                                   help='select model matrix from modified model matrix ids')
+parser.add_argument('--mask_prob_1',                    type=float,   default=0.3,                                                                                                                                                   help='mask embedding of users/items of GCN')
+parser.add_argument('--mask_prob_2',                    type=float,   default=0.4,                                                                                                                                                   help='mask embedding of users/items of GCN')
+parser.add_argument('--insert_prob_1',                    type=float,   default=0.004,                                                                                                                                                   help='mask embedding of users/items of GCN')
+parser.add_argument('--insert_prob_2',                    type=float,   default=0.004,                                                                                                                                                   help='mask embedding of users/items of GCN')
+parser.add_argument('--remove_prob_1',                    type=float,   default=0.2,                                                                                                                                                   help='mask embedding of users/items of GCN')
+parser.add_argument('--remove_prob_2',                    type=float,   default=0.4,                                                                                                                                                   help='mask embedding of users/items of GCN')
 
 args = parser.parse_args()
 
@@ -144,10 +151,9 @@ if args.train_groc:
 
     if args.groc_embed_mask:
         assert args.train_groc_casade, "You want to fine-tune a pre-trained GCN but the parameter train_groc_casade is set to False."
-        print("Mode: Embedding mask + PGD attack")
-        groc = GROC_loss(Recmodel, args, users, posItems, negItems)
-        groc.attack_adjs(adj, adj, perturbations, users, args.mask_prob_list[args.masked_model_a_id], args.mask_prob_list[args.masked_model_b_id])
-        groc.groc_train(data_len, adj, Recmodel, users)
+        print("Mode: Embedding mask + gradient attack")
+        groc = GROC_loss(Recmodel, adj, args)
+        groc.groc_train()
 
         modified_adj_a, modified_adj_b = groc.modified_adj_a, groc.modified_adj_b
 

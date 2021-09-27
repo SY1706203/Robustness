@@ -20,7 +20,8 @@ def attack_model(recmodel, adj_matrix, perturbations, path, ids, flag, users, po
         modified_adj = model.modified_adj
     else:
         print('load matrix from disc...')
-        modified_adj = torch.load(path.format(ids[flag]))
+        print("=================================================")
+        modified_adj = torch.load(path.format(ids[flag]), map_location='cpu')
         modified_adj = modified_adj.to(device)
 
     try:
