@@ -16,7 +16,6 @@ class GROC_loss(nn.Module):
         self.args = args
         self.num_users = self.ori_model.num_users
         self.num_items = self.ori_model.num_items
-        self.total_batch = None
 
     def get_embed_groc(self, trn_model, modified_adj, users, items, mask):
 
@@ -114,6 +113,8 @@ class GROC_loss(nn.Module):
         all_node_index = torch.arange(0, self.num_users + self.num_items, 1).to(self.device)
         all_node_index = utils.shuffle(all_node_index)
 
+        total_batch = len(all_node_index) // self.args.groc_batch_size + 1
+
         for i in range(self.args.groc_epochs):
             optimizer.zero_grad()
             aver_loss = 0.
@@ -145,7 +146,7 @@ class GROC_loss(nn.Module):
 
                 aver_loss += loss.cpu().item()
 
-            aver_loss = aver_loss / self.total_batch
+            aver_loss = aver_loss / total_batch
 
             if i % 10 == 0:
                 print("GROC Loss: ", aver_loss)
