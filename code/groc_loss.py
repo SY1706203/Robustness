@@ -67,14 +67,22 @@ class GROC_loss(nn.Module):
         """
         reset flag is a flag that indicate the adj will insert edges(flag==False, do sum) or set the adj back to original adj
         """
-        nodes_num = len(batch_nodes)
-        num_edges_insertion = int(nodes_num * (nodes_num - 1) / 2)
-        index_array = np.stack((batch_nodes.cpu().numpy().repeat(nodes_num), np.tile(batch_nodes.cpu().numpy(), nodes_num)))
-        adj_with_insert = self.ori_adj.clone().to(self.device)
-        adj_with_insert[index_array[0], index_array[1]] = adj_with_insert[index_array] + 1 / num_edges_insertion
-        adj_with_insert[index_array[1], index_array[0]] = adj_with_insert[index_array] + 1 / num_edges_insertion
+        adj_after_n_hops = self.contruct_adj_after_n_hops()
+        # use one hot embedding get corresponding adj_vectors and get the unique vector that merge all interaction info of these nodes, namely add edges
+        sum_graph_vector = (torch.mm(F.one_hot(batch_nodes, num_classes=adj_after_n_hops.size(0)),
+                                     adj_after_n_hops.long()).sum(0) > 0.5).float()
 
-        return adj_with_insert.masked_fill_(torch.eye(adj_with_insert.size(0), adj_with_insert.size(0)).bool().to(self.device), 0)
+        edge_insert_matrix = self.ori_adj[batch_nodes] - sum_graph_vector  # where to insert nodes between these nodes, float 0. or 1.
+
+        num_insert_edges = edge_insert_matrix.sum()
+
+        edge_insert_matrix = torch.divide(edge_insert_matrix, num_insert_edges)
+
+        adj_with_insert = self.ori_adj.clone().to(self.device)
+
+        adj_with_insert[batch_nodes] = edge_insert_matrix
+
+        return adj_with_insert
 
     def get_modified_adj_with_insert_and_remove_by_gradient(self, remove_prob, insert_prob, batch_all_node, edge_gradient):
         adj_insert_remove = self.ori_adj.clone().to(self.device)
@@ -91,6 +99,14 @@ class GROC_loss(nn.Module):
         adj_insert_remove[indices_ir[1], indices_ir[0]] = 1
 
         return adj_insert_remove
+
+    def contruct_adj_after_n_hops(self):
+        adj_after_n_hops = self.ori_adj.clone().to(self.device)
+        for _ in range(self.ori_model.n_layers):
+            adj_after_n_hops = torch.matmul(adj_after_n_hops, adj_after_n_hops)
+            adj_after_n_hops = (adj_after_n_hops > 0.5).float()
+
+        return adj_after_n_hops
 
     def groc_train(self):
         self.ori_model.train()
