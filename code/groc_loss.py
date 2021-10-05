@@ -70,8 +70,10 @@ class GROC_loss(nn.Module):
         """
         adj_after_n_hops = self.contruct_adj_after_n_hops()
         # use one hot embedding get corresponding adj_vectors and get the unique vector that merge all interaction info of these nodes, namely add edges
-        sum_graph_vector = (torch.mm(F.one_hot(batch_nodes, num_classes=adj_after_n_hops.size(0)).float(),
+        sum_graph_vector = (torch.mm(F.one_hot(batch_nodes, num_classes=adj_after_n_hops.size(0)).float().to(self.device),
                                      adj_after_n_hops).sum(0) > 0.5).float()
+
+        sum_graph_vector = sum_graph_vector.to(self.device)
 
         edge_insert_matrix = self.ori_adj[batch_nodes] - sum_graph_vector  # where to insert nodes between these nodes, float 0. or 1.
 
