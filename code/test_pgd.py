@@ -23,7 +23,7 @@ parser.add_argument('--train_groc',                     type=bool,  default=Fals
 parser.add_argument('--pgd_attack',                     type=bool,  default=False,                                                                                                                                               help='PGD attack and evaluate')
 parser.add_argument('--embedding_attack',               type=bool,  default=False,                                                                                                                                               help='PGD attack and evaluate')
 parser.add_argument('--random_perturb',                 type=bool,  default=False,                                                                                                                                               help='perturb adj randomly and compare to PGD')
-parser.add_argument('--train_groc_casade',              type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
+parser.add_argument('--groc_with_bpr',                  type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
 parser.add_argument('--groc_rdm_adj_attack',            type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
 parser.add_argument('--groc_embed_mask',                type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
 parser.add_argument('--use_scheduler',                  type=bool,  default=False,                                                                                                                                               help='Use scheduler for learning rate decay')
@@ -121,7 +121,7 @@ if args.train_groc:
                                                           users, posItems, negItems)
         print("===========================")
         print("Train model_a on modified_adj_a")
-        groc.bpr_with_dcl(data_len, modified_adj_a, modified_adj_b, Recmodel, users, posItems, negItems)
+        groc.bpr_with_dcl(data_len, modified_adj_a, modified_adj_b, users, posItems, negItems)
 
         print("original model performance on original adjacency matrix:")
         print("===========================")
@@ -138,11 +138,29 @@ if args.train_groc:
         Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(modified_adj_b), None, 0)
 
     if args.groc_embed_mask:
-        assert args.train_groc_casade, \
-            "You want to fine-tune a pre-trained GCN but the parameter train_groc_casade is set to False."
         print("Mode: Embedding mask + gradient attack")
         groc = GROC_loss(Recmodel, adj, args)
         groc.groc_train()
+
+        print("original model performance on original adjacency matrix:")
+        print("===========================")
+        Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(adj), None, 0)
+        print("===========================")
+
+        print("ori model performance after GROC learning on modified adjacency matrix A:")
+        print("===========================")
+        modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
+                                      args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+        Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(modified_adj_a), None, 0)
+
+        print("save model")
+        torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) + '/data/LightGCN_after_GROC.pt')
+        print("===========================")
+
+    if args.groc_with_bpr:
+        print("Mode:GROC + BPR")
+        groc = GROC_loss(Recmodel, adj, args)
+        groc.groc_train_with_bpr(data_len, users, posItems, negItems)
 
         print("original model performance on original adjacency matrix:")
         print("===========================")

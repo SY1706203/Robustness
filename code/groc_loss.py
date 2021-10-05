@@ -200,9 +200,10 @@ class GROC_loss(nn.Module):
             if i % 10 == 0:
                 print("GROC Loss: ", aver_loss)
 
-    def bpr_with_dcl(self, data_len_, modified_adj_a, modified_adj_b, model, users, posItems, negItems):
-        model.train()
-        optimizer = optim.Adam(model.parameters(), lr=model.lr, weight_decay=model.weight_decay)
+    def bpr_with_dcl(self, data_len_, modified_adj_a, modified_adj_b, users, posItems, negItems):
+        self.ori_model.train()
+        optimizer = optim.Adam(self.ori_model.parameters(), lr=self.ori_model.lr,
+                               weight_decay=self.ori_model.weight_decay)
         if self.args.use_scheduler:
             scheduler = scheduler_groc(optimizer, data_len_, self.args.warmup_steps, self.args.batch_size,
                                        self.args.groc_epochs)
@@ -221,11 +222,10 @@ class GROC_loss(nn.Module):
             aver_bpr_loss = 0.
             aver_dcl_loss = 0.
             for (batch_i, (batch_users, batch_pos, batch_neg)) \
-                    in enumerate(utils.minibatch(users, posItems, negItems,
-                                                 batch_size=10 if self.args.train_groc_casade else self.args.batch_size)):
-                bpr_loss, reg_loss = model.bpr_loss(self.ori_adj, batch_users, batch_pos, batch_neg)
-                reg_loss = reg_loss * model.weight_decay
-                dcl_loss = self.groc_loss(model, modified_adj_a, modified_adj_b, batch_users, batch_pos)
+                    in enumerate(utils.minibatch(users, posItems, negItems, batch_size=10)):
+                bpr_loss, reg_loss = self.ori_model.bpr_loss(self.ori_adj, batch_users, batch_pos, batch_neg)
+                reg_loss = reg_loss * self.ori_model.weight_decay
+                dcl_loss = self.groc_loss(self.ori_model, modified_adj_a, modified_adj_b, batch_users, batch_pos)
                 loss = self.args.loss_weight_bpr * bpr_loss + reg_loss + (1 - self.args.loss_weight_bpr) * dcl_loss
 
                 loss.backward()
@@ -240,6 +240,83 @@ class GROC_loss(nn.Module):
             aver_loss = aver_loss / total_batch
             aver_bpr_loss = aver_bpr_loss / total_batch
             aver_dcl_loss = aver_dcl_loss / total_batch
+
+            if i % 10 == 0:
+                print("GROC Loss: ", aver_loss)
+                print("BPR Loss: ", aver_bpr_loss)
+                print("DCL Loss: ", aver_dcl_loss)
+
+    def groc_train_with_bpr(self, data_len_, users, posItems, negItems):
+        self.ori_model.train()
+        embedding_param = []
+        adj_param = []
+        for n, p in self.ori_model.named_parameters():
+            if n.__contains__('embedding'):
+                embedding_param.append(p)
+            else:
+                adj_param.append(p)
+        optimizer = optim.Adam([
+                                    {'params': embedding_param},
+                                    {'params': adj_param, 'lr': 0}
+                                ], lr=self.ori_model.lr, weight_decay=self.ori_model.weight_decay)
+
+        if self.args.use_scheduler:
+            scheduler = scheduler_groc(optimizer, data_len_, self.args.warmup_steps, self.args.groc_batch_size,
+                                       self.args.groc_epochs)
+
+        total_batch = len(users) // self.args.batch_size + 1
+
+        for i in range(self.args.groc_epochs):
+            optimizer.zero_grad()
+            aver_loss = 0.
+            aver_bpr_loss = 0.
+            aver_groc_loss = 0.
+            for (batch_i, (batch_users, batch_pos, batch_neg)) \
+                    in enumerate(utils.minibatch(users, posItems, negItems, batch_size=self.args.batch_size)):
+
+                batch_items = utils.shuffle(torch.cat((batch_pos, batch_neg)))
+                batch_all_node = torch.cat((batch_users, batch_items + self.num_users))
+                batch_all_node = batch_all_node.unique(sorted=False)[:batch_users.shape[0]]
+                adj_with_insert = self.get_modified_adj_for_insert(batch_all_node)  # 2 views are same
+                mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1).to(self.device)
+                mask_2 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_2).to(self.device)
+
+                loss_for_grad = self.groc_loss(self.ori_model, adj_with_insert, adj_with_insert, batch_users,
+                                               batch_items, mask_1, mask_2)
+
+                # remove index of diagonal
+
+                edge_gradient = torch.autograd.grad(loss_for_grad, self.ori_model.adj, retain_graph=True)[0]
+
+                adj_insert_remove_1 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_1,
+                                                                                               self.args.remove_prob_1,
+                                                                                               batch_all_node,
+                                                                                               edge_gradient)
+                adj_insert_remove_2 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_2,
+                                                                                               self.args.remove_prob_2,
+                                                                                               batch_all_node,
+                                                                                               edge_gradient)
+
+                groc_loss = self.groc_loss(self.ori_model, adj_insert_remove_1, adj_insert_remove_2, batch_users, batch_items,
+                                           mask_1, mask_2)
+
+                bpr_loss, reg_loss = self.ori_model.bpr_loss(self.ori_adj, batch_users, batch_pos, batch_neg)
+                reg_loss = reg_loss * self.ori_model.weight_decay
+
+                loss = self.args.loss_weight_bpr * bpr_loss + reg_loss + (1 - self.args.loss_weight_bpr) * groc_loss
+                loss.backward()
+                optimizer.step()
+
+                if self.args.use_scheduler:
+                    scheduler.step()
+
+                aver_loss += loss.cpu().item()
+                aver_bpr_loss += bpr_loss.cpu().item()
+                aver_groc_loss += groc_loss.cpu().item()
+
+            aver_loss = aver_loss / total_batch
+            aver_bpr_loss = aver_bpr_loss / total_batch
+            aver_dcl_loss = aver_groc_loss / total_batch
 
             if i % 10 == 0:
                 print("GROC Loss: ", aver_loss)
