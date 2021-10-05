@@ -18,7 +18,7 @@ class LightGCN(nn.Module):
         self.num_items = dataset.m_item
         self.latent_dim = 64
         self.f = nn.Sigmoid()
-        self.adj = nn.Parameter()
+        self.adj = None
 
         self.tau_plus = 1e-3
         self.T = 0.07
@@ -33,10 +33,10 @@ class LightGCN(nn.Module):
 
     def fit(self, adj, users, posItems, negItems):
         if type(adj) is not torch.Tensor:
-            adj_norm = utils.normalize_adj_tensor(adj)
+            adj_norm = utils.normalize_adj_tensor(adj, sparse=True)
             adj = utils.to_tensor(adj_norm, device=self.device)
         else:
-            adj_norm = utils.normalize_adj_tensor(adj)
+            adj_norm = utils.normalize_adj_tensor(adj, sparse=True)
             adj = adj_norm.to(self.device)
         # self.adj=adj
 
@@ -67,7 +67,7 @@ class LightGCN(nn.Module):
         g_droped = adj
 
         for layer in range(self.n_layers):
-            all_emb = torch.mm(g_droped, all_emb)
+            all_emb = torch.sparse.mm(g_droped, all_emb)
             embs.append(all_emb)
         embs = torch.stack(embs, dim=1)
         # print(embs.size())
@@ -91,7 +91,7 @@ class LightGCN(nn.Module):
         query from GROC means that we want to push adj into computational graph
         """
         if query_groc:
-            self.adj.data = adj
+            self.adj = nn.Parameter(adj)
             all_users, all_items = self.computer(self.adj, delta_u, delta_i)
         else:
             all_users, all_items = self.computer(adj, delta_u, delta_i)

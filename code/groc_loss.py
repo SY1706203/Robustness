@@ -19,7 +19,7 @@ class GROC_loss(nn.Module):
 
     def get_embed_groc(self, trn_model, modified_adj, users, items, mask):
 
-        adj_norm = utils.normalize_adj_tensor(modified_adj)
+        adj_norm = utils.normalize_adj_tensor(modified_adj, sparse=True)
         modified_adj = adj_norm.to(self.device)
 
         (users_emb, item_emb, _, _) = trn_model.getEmbedding(modified_adj, users.long(), items.long(), query_groc=True)
@@ -87,16 +87,26 @@ class GROC_loss(nn.Module):
     def get_modified_adj_with_insert_and_remove_by_gradient(self, remove_prob, insert_prob, batch_all_node, edge_gradient):
         adj_insert_remove = self.ori_adj.clone().to(self.device)
 
+        tril_adj_index = torch.tril_indices(row=len(adj_insert_remove) - 1, col=len(adj_insert_remove) - 1, offset=0)
+        tril_adj_index_0 = tril_adj_index[0][tril_adj_index[0] != tril_adj_index[1]]
+        tril_adj_index_1 = tril_adj_index[1][tril_adj_index[0] != tril_adj_index[1]]
+
         k_remove = int(remove_prob * adj_insert_remove[batch_all_node].sum())
-        edge_gradient = edge_gradient * self.ori_adj
+        edge_gradient = (edge_gradient.to_dense() * self.ori_adj)[tril_adj_index_0, tril_adj_index_1]
         _, indices_rm = torch.topk(edge_gradient, k_remove, largest=False)
-        adj_insert_remove[indices_rm[0], indices_rm[1]] = 0
-        adj_insert_remove[indices_rm[1], indices_rm[0]] = 0
+
+        low_tril_matrix = adj_insert_remove[tril_adj_index_0, tril_adj_index_1]
+        up_tril_matrix = adj_insert_remove[tril_adj_index_1, tril_adj_index_0]
+        low_tril_matrix[indices_rm] = 0
+        up_tril_matrix[indices_rm] = 0
 
         k_insert = int(insert_prob * len(batch_all_node) * (len(batch_all_node) - 1) / 2)
         _, indices_ir = torch.topk(edge_gradient, k_insert)
-        adj_insert_remove[indices_ir[0], indices_ir[1]] = 1
-        adj_insert_remove[indices_ir[1], indices_ir[0]] = 1
+        low_tril_matrix[indices_ir] = 1
+        up_tril_matrix[indices_ir] = 1
+
+        adj_insert_remove[tril_adj_index_0, tril_adj_index_1] = low_tril_matrix
+        adj_insert_remove[tril_adj_index_1, tril_adj_index_0] = up_tril_matrix
 
         return adj_insert_remove
 
@@ -134,7 +144,8 @@ class GROC_loss(nn.Module):
         for i in range(self.args.groc_epochs):
             optimizer.zero_grad()
             aver_loss = 0.
-            for (batch_i, (batch_all_node)) in enumerate(utils.minibatch(all_node_index, batch_size=self.args.groc_batch_size)):
+            for (batch_i, (batch_all_node)) in \
+                    enumerate(utils.minibatch(all_node_index, batch_size=self.args.groc_batch_size)):
                 user_filter = (batch_all_node < self.num_users).to(self.device)
                 batch_users = torch.masked_select(batch_all_node, user_filter).to(self.device)
                 batch_items = torch.sub(torch.masked_select(batch_all_node, ~user_filter), self.num_users).to(self.device)
@@ -142,16 +153,21 @@ class GROC_loss(nn.Module):
                 mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1).to(self.device)
                 mask_2 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_2).to(self.device)
 
-                loss_for_grad = self.groc_loss(self.ori_model, adj_with_insert, adj_with_insert, batch_users, batch_items,
-                                               mask_1, mask_2)
+                loss_for_grad = self.groc_loss(self.ori_model, adj_with_insert, adj_with_insert, batch_users,
+                                               batch_items, mask_1, mask_2)
+
+                # remove index of diagonal
+
                 edge_gradient = torch.autograd.grad(loss_for_grad, self.ori_model.adj, retain_graph=True)[0]
 
                 adj_insert_remove_1 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_1,
                                                                                                self.args.remove_prob_1,
-                                                                                               batch_all_node, edge_gradient)
+                                                                                               batch_all_node,
+                                                                                               edge_gradient)
                 adj_insert_remove_2 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_2,
                                                                                                self.args.remove_prob_2,
-                                                                                               batch_all_node, edge_gradient)
+                                                                                               batch_all_node,
+                                                                                               edge_gradient)
 
                 loss = self.groc_loss(self.ori_model, adj_insert_remove_1, adj_insert_remove_2, batch_users, batch_items,
                                       mask_1, mask_2)
