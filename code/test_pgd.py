@@ -113,27 +113,15 @@ if args.train_groc:
         except AttributeError:
             print("2 random perturbed adj matrix are same.")
 
-        print("{} edges are different in both random perturbed adj matrix.".format((rdm_modified_adj_a != rdm_modified_adj_b)
-                                                                                   .sum().detach().cpu().numpy()))
-        if not args.train_groc_casade:
-            Recmodel_a = lightgcn.LightGCN(device)
-            Recmodel_a = Recmodel_a.to(device)
+        print("{} edges are different in both random perturbed adj matrix.".
+              format((rdm_modified_adj_a != rdm_modified_adj_b).sum().detach().cpu().numpy()))
 
-            Recmodel_b = lightgcn.LightGCN(device)
-            Recmodel_b = Recmodel_b.to(device)
-        else:
-            Recmodel_a = Recmodel
-            Recmodel_b = None
-        groc = GROC_loss(Recmodel, args, users, posItems, negItems)
-        groc.attack_adjs(rdm_modified_adj_a, rdm_modified_adj_b, perturbations, users)
+        groc = GROC_loss(Recmodel, adj, args)
+        modified_adj_a, modified_adj_b = groc.attack_adjs(rdm_modified_adj_a, rdm_modified_adj_b, perturbations,
+                                                          users, posItems, negItems)
         print("===========================")
         print("Train model_a on modified_adj_a")
-        groc.groc_train(data_len, groc.modified_adj_a, Recmodel_a, users)
-        if not args.train_groc_casade:
-            print("===========================")
-            print("Train model_b on modified_adj_b")
-            groc.groc_train(data_len, groc.modified_adj_b, Recmodel_b, users)
-        modified_adj_a, modified_adj_b = groc.modified_adj_a, groc.modified_adj_b
+        groc.bpr_with_dcl(data_len, modified_adj_a, modified_adj_b, Recmodel, users, posItems, negItems)
 
         print("original model performance on original adjacency matrix:")
         print("===========================")
@@ -142,15 +130,16 @@ if args.train_groc:
 
         print("trn_model performance after GROC learning on modified adjacency matrix A:")
         print("===========================")
-        Procedure.Test(dataset, Recmodel_a, 100, normalize_adj_tensor(modified_adj_a), None, 0)
+        Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(modified_adj_a), None, 0)
         print("===========================")
 
         print("trn_model performance after GROC learning on modified adjacency matrix B:")
         print("===========================")
-        Procedure.Test(dataset, Recmodel_b, 100, normalize_adj_tensor(modified_adj_b), None, 0)
+        Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(modified_adj_b), None, 0)
 
     if args.groc_embed_mask:
-        assert args.train_groc_casade, "You want to fine-tune a pre-trained GCN but the parameter train_groc_casade is set to False."
+        assert args.train_groc_casade, \
+            "You want to fine-tune a pre-trained GCN but the parameter train_groc_casade is set to False."
         print("Mode: Embedding mask + gradient attack")
         groc = GROC_loss(Recmodel, adj, args)
         groc.groc_train()
@@ -194,8 +183,9 @@ if args.embedding_attack:
     print("train model with embedding adversarial attack")
     print("=================================================")
     origin_model_without_fitting = lightgcn.LightGCN(device)
-    modified_model = attack_embedding(origin_model_without_fitting, adj, args.eps[args.modified_models_id], args.path_modified_models, args.modified_models_name,
-                                      args.modified_models_id, users, posItems, negItems, num_users, device)
+    modified_model = attack_embedding(origin_model_without_fitting, adj, args.eps[args.modified_models_id],
+                                      args.path_modified_models, args.modified_models_name, args.modified_models_id,
+                                      users, posItems, negItems, num_users, device)
     fit_model = fit_lightGCN(device, adj, users, posItems, negItems, pass_model_in=True, input_model=modified_model)
 
     print("evaluate the ATTACKED model with original adjacency matrix")

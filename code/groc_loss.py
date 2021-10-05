@@ -3,6 +3,7 @@ import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 from utils import scheduler_groc
+from utils_attack import attack_model
 import utils
 import torch.nn.functional as F
 
@@ -23,9 +24,9 @@ class GROC_loss(nn.Module):
         modified_adj = adj_norm.to(self.device)
 
         (users_emb, item_emb, _, _) = trn_model.getEmbedding(modified_adj, users.long(), items.long(), query_groc=True)
-
-        users_emb = nn.functional.normalize(users_emb, dim=1).masked_fill_(mask, 0)
-        item_emb = nn.functional.normalize(item_emb, dim=1).masked_fill_(mask, 0)
+        if mask is not None:
+            users_emb = nn.functional.normalize(users_emb, dim=1).masked_fill_(mask, 0)
+            item_emb = nn.functional.normalize(item_emb, dim=1).masked_fill_(mask, 0)
 
         return torch.cat([users_emb, item_emb])
 
@@ -57,7 +58,7 @@ class GROC_loss(nn.Module):
 
         return loss_vec
 
-    def groc_loss(self, trn_model, modified_adj_a, modified_adj_b, users, items, mask_1, mask_2):
+    def groc_loss(self, trn_model, modified_adj_a, modified_adj_b, users, items, mask_1=None, mask_2=None):
         loss_vec_a = self.groc_loss_vec(trn_model, modified_adj_a, modified_adj_b, users, items, mask_1, mask_2)
         loss_vec_b = self.groc_loss_vec(trn_model, modified_adj_b, modified_adj_a, users, items, mask_1, mask_2)
 
@@ -117,6 +118,22 @@ class GROC_loss(nn.Module):
             adj_after_n_hops = (adj_after_n_hops > 0.5).float()
 
         return adj_after_n_hops
+
+    def attack_adjs(self, adj_a, adj_b, perturbations, users, posItems, negItems):
+        modified_adj_a = attack_model(self.ori_model, adj_a, perturbations, self.args.path_modified_adj,
+                                      self.args.modified_adj_name_with_rdm_ptb_a, self.args.modified_adj_id,
+                                      users, posItems, negItems, self.ori_model.num_users, self.device)
+
+        modified_adj_b = attack_model(self.ori_model, adj_b, perturbations, self.args.path_modified_adj,
+                                      self.args.modified_adj_name_with_rdm_ptb_b, self.args.modified_adj_id,
+                                      users, posItems, negItems, self.ori_model.num_users, self.device)
+
+        try:
+            print("modified adjacency matrix are not same:", (modified_adj_a == modified_adj_b).all())
+        except AttributeError:
+            print("2 modified adjacency matrix are same. Check your perturbation value")
+
+        return modified_adj_a, modified_adj_b
 
     def groc_train(self):
         self.ori_model.train()
@@ -182,3 +199,52 @@ class GROC_loss(nn.Module):
 
             if i % 10 == 0:
                 print("GROC Loss: ", aver_loss)
+
+    def bpr_with_dcl(self, data_len_, modified_adj_a, modified_adj_b, model, users, posItems, negItems):
+        model.train()
+        optimizer = optim.Adam(model.parameters(), lr=model.lr, weight_decay=model.weight_decay)
+        if self.args.use_scheduler:
+            scheduler = scheduler_groc(optimizer, data_len_, self.args.warmup_steps, self.args.batch_size,
+                                       self.args.groc_epochs)
+
+        total_batch = len(users) // self.args.batch_size + 1
+
+        for i in range(self.args.groc_epochs):
+            optimizer.zero_grad()
+
+            users = users.to(self.device)
+            posItems = posItems.to(self.device)
+            negItems = negItems.to(self.device)
+            users, posItems, negItems = utils.shuffle(users, posItems, negItems)
+
+            aver_loss = 0.
+            aver_bpr_loss = 0.
+            aver_dcl_loss = 0.
+            for (batch_i, (batch_users, batch_pos, batch_neg)) \
+                    in enumerate(utils.minibatch(users, posItems, negItems,
+                                                 batch_size=10 if self.args.train_groc_casade else self.args.batch_size)):
+                bpr_loss, reg_loss = model.bpr_loss(self.ori_adj, batch_users, batch_pos, batch_neg)
+                reg_loss = reg_loss * model.weight_decay
+                dcl_loss = self.groc_loss(model, modified_adj_a, modified_adj_b, batch_users, batch_pos)
+                loss = self.args.loss_weight_bpr * bpr_loss + reg_loss + (1 - self.args.loss_weight_bpr) * dcl_loss
+
+                loss.backward()
+                optimizer.step()
+                if self.args.use_scheduler:
+                    scheduler.step()
+
+                aver_loss += loss.cpu().item()
+                aver_bpr_loss += bpr_loss.cpu().item()
+                aver_dcl_loss += dcl_loss.cpu().item()
+
+            aver_loss = aver_loss / total_batch
+            aver_bpr_loss = aver_bpr_loss / total_batch
+            aver_dcl_loss = aver_dcl_loss / total_batch
+
+            if i % 10 == 0:
+                print("GROC Loss: ", aver_loss)
+                print("BPR Loss: ", aver_bpr_loss)
+                print("DCL Loss: ", aver_dcl_loss)
+
+    def fit(self):
+        pass

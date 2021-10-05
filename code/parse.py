@@ -58,5 +58,6 @@ def parse_args():
     parser.add_argument('--pdg_attack', type=bool, default=False, help='PDG attack and evaluate')
     parser.add_argument('--random_perturb', type=bool, default=False, help='perturb adj randomly and compare to PGD')
     parser.add_argument('--pgd_attack', type=bool, default=False, help='PGD attack and evaluate')
+    parser.add_argument('--groc_rdm_adj_attack', type=bool, default=False, help='train a pre-trained GCN on GROC loss')
 
     return parser.parse_args()
