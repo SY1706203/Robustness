@@ -275,8 +275,9 @@ class GROC_loss(nn.Module):
                     in enumerate(utils.minibatch(users, posItems, negItems, batch_size=self.args.batch_size)):
 
                 batch_items = utils.shuffle(torch.cat((batch_pos, batch_neg)))
-                batch_all_node = torch.cat((batch_users, batch_items + self.num_users))
-                batch_all_node = batch_all_node.unique(sorted=False)[:batch_users.shape[0]]
+                batch_all_node = torch.cat((batch_users, batch_items + self.num_users)).unique(sorted=False)
+                if batch_all_node.shape[0] > batch_users.shape[0]:
+                    batch_all_node = batch_all_node[:batch_users.shape[0]]
                 adj_with_insert = self.get_modified_adj_for_insert(batch_all_node)  # 2 views are same
                 mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1).to(self.device)
                 mask_2 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_2).to(self.device)
