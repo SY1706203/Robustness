@@ -270,14 +270,21 @@ class GROC_loss(nn.Module):
 
         for i in range(self.args.groc_epochs):
             optimizer.zero_grad()
+
+            users = users.to(self.device)
+            posItems = posItems.to(self.device)
+            negItems = negItems.to(self.device)
+            users, posItems, negItems = utils.shuffle(users, posItems, negItems)
+
             aver_loss = 0.
             aver_bpr_loss = 0.
             aver_groc_loss = 0.
             for (batch_i, (batch_users, batch_pos, batch_neg)) \
                     in enumerate(utils.minibatch(users, posItems, negItems, batch_size=self.args.batch_size)):
 
-                batch_items = utils.shuffle(torch.cat((batch_pos, batch_neg)))
-                batch_all_node = torch.cat((batch_users, batch_items + self.num_users)).unique(sorted=False)
+                batch_items = utils.shuffle(torch.cat((batch_pos, batch_neg))).to(self.device)
+                batch_all_node = torch.cat((batch_users, batch_items + self.num_users)).unique(sorted=False).to(self.device)
+                batch_items = (batch_items + self.num_users).to(self.device)
                 if batch_all_node.shape[0] > batch_users.shape[0]:
                     batch_all_node = batch_all_node[:batch_users.shape[0]]
                 adj_with_insert = self.get_modified_adj_for_insert(batch_all_node)  # 2 views are same
