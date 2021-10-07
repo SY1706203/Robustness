@@ -100,6 +100,7 @@ if args.random_perturb:
     print("=================================================")
 
 if args.train_groc:
+    Recmodel = lightgcn.LightGCN(device)
     print("Train GROC loss")
     print("=================================================")
     if args.groc_rdm_adj_attack:
