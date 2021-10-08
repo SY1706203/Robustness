@@ -1,3 +1,4 @@
+import gc
 import torch
 import numpy as np
 import torch.nn as nn
@@ -391,6 +392,9 @@ class GROC_loss(nn.Module):
         self.ori_adj = utils.normalize_adj_tensor(self.ori_adj, sparse=True)
         gra1 = utils.normalize_adj_tensor(gra1, sparse=True)
         gra2 = utils.normalize_adj_tensor(gra2, sparse=True)
+
+        gc.collect()
+
         self.ori_model.train()
         embedding_param = []
         adj_param = []
