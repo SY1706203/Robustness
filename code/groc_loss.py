@@ -25,8 +25,11 @@ class GROC_loss(nn.Module):
 
         (users_emb, item_emb, _, _) = trn_model.getEmbedding(modified_adj, users.long(), items.long(), query_groc=True)
         if mask is not None:
-            users_emb = nn.functional.normalize(users_emb, dim=1).masked_fill_(mask, 0)
-            item_emb = nn.functional.normalize(item_emb, dim=1).masked_fill_(mask, 0)
+            users_emb = nn.functional.normalize(users_emb, dim=1).masked_fill_(mask, 0.)
+            item_emb = nn.functional.normalize(item_emb, dim=1).masked_fill_(mask, 0.)
+        else:
+            users_emb = nn.functional.normalize(users_emb, dim=1)
+            item_emb = nn.functional.normalize(item_emb, dim=1)
 
         return torch.cat([users_emb, item_emb])
 
@@ -225,6 +228,7 @@ class GROC_loss(nn.Module):
             aver_dcl_loss = 0.
             for (batch_i, (batch_users, batch_pos, batch_neg)) \
                     in enumerate(utils.minibatch(users, posItems, negItems, batch_size=10)):
+                self.ori_adj = utils.normalize_adj_tensor(self.ori_adj, sparse=True)
                 bpr_loss, reg_loss = self.ori_model.bpr_loss(self.ori_adj, batch_users, batch_pos, batch_neg)
                 reg_loss = reg_loss * self.ori_model.weight_decay
                 dcl_loss = self.groc_loss(self.ori_model, modified_adj_a, modified_adj_b, batch_users, batch_pos)
@@ -283,12 +287,15 @@ class GROC_loss(nn.Module):
                     in enumerate(utils.minibatch(users, posItems, negItems, batch_size=self.args.batch_size)):
 
                 batch_items = utils.shuffle(torch.cat((batch_pos, batch_neg))).to(self.device)
-                batch_all_node = torch.cat((batch_users, batch_items + self.num_users)).unique(sorted=False).to(self.device)
+                batch_all_node = torch.cat((batch_users, batch_items + self.num_users)).unique(sorted=False)\
+                    .to(self.device)
                 if batch_all_node.shape[0] > batch_users.shape[0]:
                     batch_all_node = batch_all_node[:batch_users.shape[0]]
                 adj_with_insert = self.get_modified_adj_for_insert(batch_all_node)  # 2 views are same
-                mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1).to(self.device)
-                mask_2 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_2).to(self.device)
+                mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1)\
+                    .to(self.device)
+                mask_2 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_2)\
+                    .to(self.device)
 
                 loss_for_grad = self.groc_loss(self.ori_model, adj_with_insert, adj_with_insert, batch_users,
                                                batch_items, mask_1, mask_2)
@@ -306,9 +313,10 @@ class GROC_loss(nn.Module):
                                                                                                batch_all_node,
                                                                                                edge_gradient)
 
-                groc_loss = self.groc_loss(self.ori_model, adj_insert_remove_1, adj_insert_remove_2, batch_users, batch_items,
-                                           mask_1, mask_2)
+                groc_loss = self.groc_loss(self.ori_model, adj_insert_remove_1, adj_insert_remove_2, batch_users,
+                                           batch_items, mask_1, mask_2)
 
+                self.ori_adj = utils.normalize_adj_tensor(self.ori_adj, sparse=True)
                 bpr_loss, reg_loss = self.ori_model.bpr_loss(self.ori_adj, batch_users, batch_pos, batch_neg)
                 reg_loss = reg_loss * self.ori_model.weight_decay
 
@@ -322,6 +330,115 @@ class GROC_loss(nn.Module):
                 aver_loss += loss.cpu().item()
                 aver_bpr_loss += bpr_loss.cpu().item()
                 aver_groc_loss += groc_loss.cpu().item()
+
+            aver_loss = aver_loss / total_batch
+            aver_bpr_loss = aver_bpr_loss / total_batch
+            aver_dcl_loss = aver_groc_loss / total_batch
+
+            if i % 10 == 0:
+                print("GROC Loss: ", aver_loss)
+                print("BPR Loss: ", aver_bpr_loss)
+                print("DCL Loss: ", aver_dcl_loss)
+
+    def ori_gcl_computing(self, trn_model, gra1, gra2, users, poss):
+        (_, pos_emb, _, _) = trn_model.getEmbedding(self.ori_adj, users.long(), poss.long())
+
+        (users_emb_perturb_1, _, _, _) = trn_model.getEmbedding(gra1, users.long(), poss.long())
+        users_emb_perturb_1 = nn.functional.normalize(users_emb_perturb_1, dim=1)
+        (users_emb_perturb_2, _, _, _) = trn_model.getEmbedding(gra2, users.long(), poss.long())
+        users_emb_perturb_2 = nn.functional.normalize(users_emb_perturb_2, dim=1)
+        users_dot_12 = torch.bmm(users_emb_perturb_1.unsqueeze(1), users_emb_perturb_2.unsqueeze(2)).squeeze(2)
+        users_dot_12 /= self.args.T_groc
+        fenzi_12 = torch.exp(users_dot_12).sum(1)
+
+        neg_emb_users_12 = users_emb_perturb_2.unsqueeze(0).repeat(pos_emb.size(0), 1, 1)
+        neg_dot_12 = torch.bmm(neg_emb_users_12, users_emb_perturb_1.unsqueeze(2)).squeeze(2)
+        neg_dot_12 /= self.args.T_groc
+        neg_dot_12 = torch.exp(neg_dot_12).sum(1)
+
+        mask_11 = self.get_negative_mask_perturb(users_emb_perturb_1.size(0)).to(self.device)
+        neg_dot_11 = torch.exp(torch.mm(users_emb_perturb_1, users_emb_perturb_1.t()) / self.args.T_groc)
+        neg_dot_11 = neg_dot_11.masked_select(mask_11).view(users_emb_perturb_1.size(0), -1).sum(1)
+        loss_perturb_11 = (-torch.log(fenzi_12 / (neg_dot_11 + neg_dot_12))).mean()
+
+        users_dot_21 = torch.bmm(users_emb_perturb_2.unsqueeze(1), users_emb_perturb_1.unsqueeze(2)).squeeze(2)
+        users_dot_21 /= self.args.T_groc
+        fenzi_21 = torch.exp(users_dot_21).sum(1)
+
+        neg_emb_users_21 = users_emb_perturb_1.unsqueeze(0).repeat(pos_emb.size(0), 1, 1)
+        neg_dot_21 = torch.bmm(neg_emb_users_21, users_emb_perturb_2.unsqueeze(2)).squeeze(2)
+        neg_dot_21 /= self.args.T_groc
+        neg_dot_21 = torch.exp(neg_dot_21).sum(1)
+
+        mask_22 = self.get_negative_mask_perturb(users_emb_perturb_2.size(0)).to(self.device)
+        neg_dot_22 = torch.exp(torch.mm(users_emb_perturb_2, users_emb_perturb_2.t()) / self.args.T_groc)
+        neg_dot_22 = neg_dot_22.masked_select(mask_22).view(users_emb_perturb_2.size(0), -1).sum(1)
+        loss_perturb_22 = (-torch.log(fenzi_21 / (neg_dot_22 + neg_dot_21))).mean()
+
+        loss_perturb = loss_perturb_11 + loss_perturb_22
+
+        return loss_perturb
+    
+    @staticmethod
+    def get_negative_mask_perturb(batch_size):
+        negative_mask = torch.ones((batch_size, batch_size), dtype=bool)
+        for i in range(batch_size):
+            negative_mask[i, i] = 0
+
+        return negative_mask
+
+    def ori_gcl_train_with_bpr(self, gra1, gra2, data_len_, users, posItems, negItems):
+        self.ori_adj = utils.normalize_adj_tensor(self.ori_adj, sparse=True)
+        gra1 = utils.normalize_adj_tensor(gra1, sparse=True)
+        gra2 = utils.normalize_adj_tensor(gra2, sparse=True)
+        self.ori_model.train()
+        embedding_param = []
+        adj_param = []
+        for n, p in self.ori_model.named_parameters():
+            if n.__contains__('embedding'):
+                embedding_param.append(p)
+            else:
+                adj_param.append(p)
+        optimizer = optim.Adam([
+            {'params': embedding_param},
+            {'params': adj_param, 'lr': 0}
+        ], lr=self.ori_model.lr, weight_decay=self.ori_model.weight_decay)
+
+        if self.args.use_scheduler:
+            scheduler = scheduler_groc(optimizer, data_len_, self.args.warmup_steps, self.args.groc_batch_size,
+                                       self.args.groc_epochs)
+
+        total_batch = len(users) // self.args.batch_size + 1
+
+        for i in range(self.args.groc_epochs):
+            optimizer.zero_grad()
+
+            users = users.to(self.device)
+            posItems = posItems.to(self.device)
+            negItems = negItems.to(self.device)
+            users, posItems, negItems = utils.shuffle(users, posItems, negItems)
+
+            aver_loss = 0.
+            aver_bpr_loss = 0.
+            aver_groc_loss = 0.
+            for (batch_i, (batch_users, batch_pos, batch_neg)) \
+                    in enumerate(utils.minibatch(users, posItems, negItems, batch_size=self.args.batch_size)):
+
+                gcl = self.ori_gcl_computing(self.ori_model, gra1, gra2, batch_users, batch_pos)
+
+                bpr_loss, reg_loss = self.ori_model.bpr_loss(self.ori_adj, batch_users, batch_pos, batch_neg)
+                reg_loss = reg_loss * self.ori_model.weight_decay
+
+                loss = self.args.loss_weight_bpr * bpr_loss + reg_loss + (1 - self.args.loss_weight_bpr) * gcl
+                loss.backward()
+                optimizer.step()
+
+                if self.args.use_scheduler:
+                    scheduler.step()
+
+                aver_loss += loss.cpu().item()
+                aver_bpr_loss += bpr_loss.cpu().item()
+                aver_groc_loss += gcl.cpu().item()
 
             aver_loss = aver_loss / total_batch
             aver_bpr_loss = aver_bpr_loss / total_batch

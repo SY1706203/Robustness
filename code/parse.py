@@ -60,5 +60,6 @@ def parse_args():
     parser.add_argument('--pgd_attack', type=bool, default=False, help='PGD attack and evaluate')
     parser.add_argument('--groc_rdm_adj_attack', type=bool, default=False, help='train a pre-trained GCN on GROC loss')
     parser.add_argument('--groc_with_bpr', type=bool, default=False, help='train a pre-trained GCN on GROC loss')
+    parser.add_argument('--gcl_with_bpr', type=bool, default=False, help='train a pre-trained GCN on GROC loss')
 
     return parser.parse_args()

@@ -4,7 +4,7 @@ import argparse
 import os
 import lightgcn
 from register import dataset
-from utils import getTrainSet, normalize_adj_tensor
+from utils import getTrainSet, normalize_adj_tensor, to_tensor
 from utils_attack import attack_model, attack_randomly, attack_embedding, fit_lightGCN
 import Procedure
 from groc_loss import GROC_loss
@@ -26,6 +26,7 @@ parser.add_argument('--random_perturb',                 type=bool,  default=Fals
 parser.add_argument('--groc_with_bpr',                  type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
 parser.add_argument('--groc_rdm_adj_attack',            type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
 parser.add_argument('--groc_embed_mask',                type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
+parser.add_argument('--gcl_with_bpr',                   type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
 parser.add_argument('--use_scheduler',                  type=bool,  default=False,                                                                                                                                               help='Use scheduler for learning rate decay')
 parser.add_argument('--loss_weight_bpr',                type=float, default=0.9,                                                                                                                                                 help='train loss with learnable weight between 2 losses')
 parser.add_argument('--dataset',                        type=str,   default='citeseer',                                                                                                             choices=['MOOC'],            help='dataset')
@@ -177,6 +178,43 @@ if args.train_groc:
 
         print("save model")
         torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) + '/data/LightGCN_after_GROC.pt')
+        print("===========================")
+
+    if args.gcl_with_bpr:
+
+        def __dropout_x(x, keep_prob):
+            size = x.coalesce().size()
+            index = x.coalesce().indices().t()
+            values = x.coalesce().values()
+            random_index = torch.rand(len(values)) + keep_prob
+            random_index = random_index.int().bool()
+            index = index[random_index]
+            values = values[random_index] / keep_prob
+            g = torch.sparse.FloatTensor(index.t(), values, size)
+            return g
+
+        Graph = dataset.getSparseGraph()
+        Graph = to_tensor(Graph, device=device)
+        Graph1 = __dropout_x(Graph, 0.8).to(device)
+        Graph2 = __dropout_x(Graph, 0.8).to(device)
+
+        print("Mode:GCL + BPR")
+        groc = GROC_loss(Recmodel, adj, args)
+        groc.ori_gcl_train_with_bpr(Graph1, Graph2, data_len, users, posItems, negItems)
+
+        print("original model performance on original adjacency matrix:")
+        print("===========================")
+        Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(adj), None, 0)
+        print("===========================")
+
+        print("ori model performance after GROC learning on modified adjacency matrix A:")
+        print("===========================")
+        modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
+                                      args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+        Procedure.Test(dataset, Recmodel, 100, normalize_adj_tensor(modified_adj_a), None, 0)
+
+        print("save model")
+        torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) + '/data/LightGCN_after_GCL_BPR.pt')
         print("===========================")
 
     print("=================================================")
