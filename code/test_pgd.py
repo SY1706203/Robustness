@@ -89,8 +89,6 @@ adj = torch.FloatTensor(adj.todense()).to(device)
 # perturbations = int(args.ptb_rate * ((dataset.trainDataSize+dataset.testDataSize)//2))
 perturbations = int(args.ptb_rate * (adj.sum() // args.perturb_strength_list[args.modified_adj_id]))
 
-'''
-
 users, posItems, negItems = utils.getTrainSet(dataset)
 data_len = len(users)
 # Setup and fit origin Model
@@ -100,7 +98,7 @@ Recmodel = Recmodel.to(device)
 Recmodel.fit(adj, users, posItems, negItems)
 
 num_users = Recmodel.num_users
-
+'''
 
 if args.random_perturb:
     print("train model using random perturbation")
