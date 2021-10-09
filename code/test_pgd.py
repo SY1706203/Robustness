@@ -9,6 +9,8 @@ from utils_attack import attack_model, attack_randomly, attack_embedding, fit_li
 import Procedure
 from groc_loss import GROC_loss
 
+print("debug info: code only remains import statements")
+'''
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed',                           type=int,   default=15,                                                                                                                                                  help='Random seed.')
 parser.add_argument('--warmup_steps',                   type=int,   default=10000,                                                                                                                                               help='Warm up steps for scheduler.')
@@ -252,3 +254,4 @@ if args.embedding_attack:
     print("evaluate the ATTACKED model with original adjacency matrix")
     Procedure.Test(dataset, fit_model, 1, normalize_adj_tensor(adj), None, 0)
     print("=================================================")
+'''
