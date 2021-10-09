@@ -67,7 +67,11 @@ print("All parameters in args")
 print(args)
 print("=================================================")
 
+print("debug info: code only remains import statements + parser + vanila GCN training")
 
+now = datetime.now()
+current_time = now.strftime("%H:%M:%S")
+print("Current Time after parser initialization=", current_time)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 np.random.seed(args.seed)
@@ -90,11 +94,6 @@ Recmodel = fit_lightGCN(device, adj, users, posItems, negItems, modified_adj=Fal
 
 num_users = Recmodel.num_users
 
-print("debug info: code only remains import statements + parser + vanila GCN training")
-
-now = datetime.now()
-current_time = now.strftime("%H:%M:%S")
-print("Current Time =", current_time)
 '''
 if args.random_perturb:
     print("train model using random perturbation")
