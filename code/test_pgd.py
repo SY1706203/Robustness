@@ -1,23 +1,13 @@
 import torch
-print("torch imported")
 import numpy as np
-print("np imported")
 import argparse
-print("argparse imported")
 import os
-print("os imported")
 import lightgcn
-print("lightgcn imported")
 from register import dataset
-print("from register dataset imported")
 from utils import getTrainSet, normalize_adj_tensor, to_tensor
-print("from utils getTrainSet, normalize_adj_tensor, to_tensor imported")
 from utils_attack import attack_model, attack_randomly, attack_embedding, fit_lightGCN
-print("from register attack_model, attack_randomly, attack_embedding, fit_lightGCN imported")
 import Procedure
-print("Procedure imported")
 from groc_loss import GROC_loss
-print("from groc_loss GROC_Loss imported")
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed',                           type=int,   default=15,                                                                                                                                                  help='Random seed.')
@@ -38,6 +28,7 @@ parser.add_argument('--groc_rdm_adj_attack',            type=bool,  default=Fals
 parser.add_argument('--groc_embed_mask',                type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
 parser.add_argument('--gcl_with_bpr',                   type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
 parser.add_argument('--use_scheduler',                  type=bool,  default=False,                                                                                                                                               help='Use scheduler for learning rate decay')
+parser.add_argument('--debug',                  type=bool,  default=False,                                                                                                                                               help='Use scheduler for learning rate decay')
 parser.add_argument('--loss_weight_bpr',                type=float, default=0.9,                                                                                                                                                 help='train loss with learnable weight between 2 losses')
 parser.add_argument('--dataset',                        type=str,   default='citeseer',                                                                                                             choices=['MOOC'],            help='dataset')
 parser.add_argument('--T_groc',                         type=float, default=0.7,                                                                                                                                                 help='param temperature for GROC')
@@ -227,6 +218,8 @@ if args.train_groc:
         torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) + '/data/LightGCN_after_GCL_BPR.pt')
         print("===========================")
 
+    if args.debug:
+        print("wtf is that????")
     print("=================================================")
     print("=================================================")
 
