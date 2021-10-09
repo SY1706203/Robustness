@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from datetime import datetime
 import argparse
 import os
 import lightgcn
@@ -67,6 +68,10 @@ print(args)
 print("=================================================")
 
 print("debug info: code only remains import statements + parser")
+
+now = datetime.now()
+current_time = now.strftime("%H:%M:%S")
+print("Current Time =", current_time)
 '''
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 np.random.seed(args.seed)
