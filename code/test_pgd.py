@@ -1,13 +1,23 @@
 import torch
+print("torch imported")
 import numpy as np
+print("np imported")
 import argparse
+print("argparse imported")
 import os
+print("os imported")
 import lightgcn
+print("lightgcn imported")
 from register import dataset
+print("from register dataset imported")
 from utils import getTrainSet, normalize_adj_tensor, to_tensor
+print("from utils getTrainSet, normalize_adj_tensor, to_tensor imported")
 from utils_attack import attack_model, attack_randomly, attack_embedding, fit_lightGCN
+print("from register attack_model, attack_randomly, attack_embedding, fit_lightGCN imported")
 import Procedure
+print("Procedure imported")
 from groc_loss import GROC_loss
+print("from groc_loss GROC_Loss imported")
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed',                           type=int,   default=15,                                                                                                                                                  help='Random seed.')
