@@ -92,28 +92,3 @@ def attack_embedding(recmodel, adj_matrix, eps, path, ids, flag, users, posItems
         modified_model = modified_model.to(device)
 
     return modified_model
-
-
-def fit_lightGCN(device, adj, users, posItems, negItems, modified_adj=True, pass_model_in=False, input_model=None):
-    if not pass_model_in:
-        assert input_model is None, "You set param pass_model_in to False but still pass a model in. Check where you invoked fit_lightGCN"
-        Recmodel = lightgcn.LightGCN(device)
-    else:
-        assert input_model is not None, "You set param pass_model_in to True and didn't pass a model in. Check where you invoked fit_lightGCN"
-        Recmodel = input_model
-    Recmodel = Recmodel.to(device)
-    print("fit lightGCN..")
-    print("=================================================")
-    if modified_adj:
-        print("training model on modified adj matrix..")
-        print("=================================================")
-    else:
-        if pass_model_in:
-            print("training passed accacked model on original adj matrix..")
-        else:
-            print("training model on original adj matrix..")
-        print("=================================================")
-    Recmodel.fit(adj, users, posItems, negItems)
-    print("finished!")
-    print("=================================================")
-    return Recmodel

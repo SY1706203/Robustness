@@ -6,7 +6,7 @@ import os
 import lightgcn
 from register import dataset
 from utils import getTrainSet, normalize_adj_tensor, to_tensor
-from utils_attack import attack_model, attack_randomly, attack_embedding, fit_lightGCN
+from utils_attack import attack_model, attack_randomly, attack_embedding
 import Procedure
 from groc_loss import GROC_loss
 
@@ -90,11 +90,13 @@ users, posItems, negItems = getTrainSet(dataset)
 data_len = len(users)
 # Setup and fit origin Model
 
-Recmodel = fit_lightGCN(device, adj, users, posItems, negItems, modified_adj=False)
+Recmodel = lightgcn.LightGCN(device)
+Recmodel = Recmodel.to(device)
+Recmodel.fit(adj, users, posItems, negItems)
 
 num_users = Recmodel.num_users
-
 '''
+
 if args.random_perturb:
     print("train model using random perturbation")
     print("=================================================")
@@ -105,7 +107,9 @@ if args.random_perturb:
     except AttributeError:
         print("adjacency is not modified. Check your perturbation and make sure 0 isn't assigned.")
 
-    Recmodel_ = fit_lightGCN(device, modified_adj, users, posItems, negItems)
+    Recmodel_ = lightgcn.LightGCN(device)
+    Recmodel_ = Recmodel_.to(device)
+    Recmodel_.fit(adj, users, posItems, negItems)
     print("evaluate the model with modified adjacency matrix")
     Procedure.Test(dataset, Recmodel_, 1, normalize_adj_tensor(modified_adj), None, 0)
     print("=================================================")
@@ -238,7 +242,9 @@ if args.pgd_attack:
     # Setup Attack Model
     modified_adj = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
                                 args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
-    Recmodel_ = fit_lightGCN(device, modified_adj, users, posItems, negItems)
+    Recmodel_ = lightgcn.LightGCN(device)
+    Recmodel_ = Recmodel_.to(device)
+    Recmodel_.fit(adj, users, posItems, negItems)
 
     try:
         print("modified adjacency is same as original adjacency: ", (modified_adj == adj).all())
@@ -252,11 +258,13 @@ if args.pgd_attack:
 if args.embedding_attack:
     print("train model with embedding adversarial attack")
     print("=================================================")
-    origin_model_without_fitting = lightgcn.LightGCN(device)
-    modified_model = attack_embedding(origin_model_without_fitting, adj, args.eps[args.modified_models_id],
+    fit_model = lightgcn.LightGCN(device)
+    modified_model = attack_embedding(fit_model, adj, args.eps[args.modified_models_id],
                                       args.path_modified_models, args.modified_models_name, args.modified_models_id,
                                       users, posItems, negItems, num_users, device)
-    fit_model = fit_lightGCN(device, adj, users, posItems, negItems, pass_model_in=True, input_model=modified_model)
+
+    fit_model = fit_model.to(device)
+    fit_model.fit(adj, users, posItems, negItems)
 
     print("evaluate the ATTACKED model with original adjacency matrix")
     Procedure.Test(dataset, fit_model, 1, normalize_adj_tensor(adj), None, 0)
