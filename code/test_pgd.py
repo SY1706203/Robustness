@@ -175,6 +175,10 @@ if args.train_groc:
         groc = GROC_loss(Recmodel, adj, args)
         groc.groc_train_with_bpr(data_len, users, posItems, negItems)
 
+        print("save model")
+        torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) + '/data/LightGCN_after_GROC.pt')
+        print("===========================")
+
         print("original model performance on original adjacency matrix:")
         print("===========================")
         Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
@@ -185,10 +189,6 @@ if args.train_groc:
         modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
                                       args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
         Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_a), None, 0)
-
-        print("save model")
-        torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) + '/data/LightGCN_after_GROC.pt')
-        print("===========================")
 
     if args.gcl_with_bpr:
 
