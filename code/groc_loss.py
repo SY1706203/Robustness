@@ -24,6 +24,8 @@ class GROC_loss(nn.Module):
         adj_norm = utils.normalize_adj_tensor(modified_adj, sparse=True)
         modified_adj = adj_norm.to(self.device)
 
+        gc.collect()  # garbage collection of passed-in tensor
+
         (users_emb, item_emb, _, _) = trn_model.getEmbedding(modified_adj, users.long(), items.long(), query_groc=True)
         if mask is not None:
             users_emb = nn.functional.normalize(users_emb, dim=1).masked_fill_(mask, 0.)
@@ -230,6 +232,11 @@ class GROC_loss(nn.Module):
             for (batch_i, (batch_users, batch_pos, batch_neg)) \
                     in enumerate(utils.minibatch(users, posItems, negItems, batch_size=10)):
                 self.ori_adj = utils.normalize_adj_tensor(self.ori_adj, sparse=True)
+                modified_adj_a = utils.normalize_adj_tensor(modified_adj_a, sparse=True)
+                modified_adj_b = utils.normalize_adj_tensor(modified_adj_b, sparse=True)
+
+                gc.collect()
+
                 bpr_loss, reg_loss = self.ori_model.bpr_loss(self.ori_adj, batch_users, batch_pos, batch_neg)
                 reg_loss = reg_loss * self.ori_model.weight_decay
                 dcl_loss = self.groc_loss(self.ori_model, modified_adj_a, modified_adj_b, batch_users, batch_pos)
@@ -317,8 +324,8 @@ class GROC_loss(nn.Module):
                 groc_loss = self.groc_loss(self.ori_model, adj_insert_remove_1, adj_insert_remove_2, batch_users,
                                            batch_items, mask_1, mask_2)
 
-                self.ori_adj = utils.normalize_adj_tensor(self.ori_adj, sparse=True)
-                bpr_loss, reg_loss = self.ori_model.bpr_loss(self.ori_adj, batch_users, batch_pos, batch_neg)
+                ori_adj_sparse = utils.normalize_adj_tensor(self.ori_adj, sparse=True)
+                bpr_loss, reg_loss = self.ori_model.bpr_loss(ori_adj_sparse, batch_users, batch_pos, batch_neg)
                 reg_loss = reg_loss * self.ori_model.weight_decay
 
                 loss = self.args.loss_weight_bpr * bpr_loss + reg_loss + (1 - self.args.loss_weight_bpr) * groc_loss
