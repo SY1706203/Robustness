@@ -1,6 +1,5 @@
 import gc
 import torch
-import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 from utils import scheduler_groc
@@ -71,54 +70,44 @@ class GROC_loss(nn.Module):
 
         return torch.sum(torch.add(loss_vec_a, loss_vec_b)) / (2 * loss_vec_a.size(0))
 
-    def get_modified_adj_for_insert(self, batch_nodes):
+    def get_modified_adj_for_insert(self, batch_nodes, adj_with_2_hops):
         """
         reset flag is a flag that indicate the adj will insert edges(flag==False, do sum) or set the adj back to original adj
         """
-        adj_after_n_hops = self.contruct_adj_after_n_hops()
         # use one hot embedding get corresponding adj_vectors and get the unique vector that merge all interaction info of these nodes, namely add edges
         i = torch.stack((batch_nodes, batch_nodes))
         v = torch.ones(i.shape[1])
-        batch_nodes_in_matrix = torch.sparse_coo_tensor(i, v, adj_after_n_hops.shape).to(self.device)
+        batch_nodes_in_matrix = torch.sparse_coo_tensor(i, v, adj_with_2_hops.shape).to(self.device)
 
         # make sure there are no connections between users and users / items and items
-        restriction_tensor = torch.zeros(adj_after_n_hops.shape)
-        restriction_tensor[:self.num_users, :self.num_users] = 1.
-        restriction_tensor[self.num_users:, self.num_users:] = 1.
-        restriction_tensor = restriction_tensor.to_sparse().to(self.device)
 
-        adj_after_n_hops = adj_after_n_hops * restriction_tensor
-        del restriction_tensor
+        adj_with_2_hops[:self.num_users, :self.num_users] = 0.
+        adj_with_2_hops[self.num_users:, self.num_users:] = 0.
+        # after modification the adj_with_2_hops is still dense(density > 50%)
 
-        index_matrix = batch_nodes_in_matrix.to_dense().to(self.device)
-        del batch_nodes_in_matrix
-        gc.collect()
+        where_to_insert = (torch.sparse.mm(batch_nodes_in_matrix, adj_with_2_hops) -
+                           torch.sparse.mm(batch_nodes_in_matrix, self.ori_adj)).to(self.device)
 
-        # bug here: sparse.mm gets false result
-        where_to_insert = (torch.mm(index_matrix, adj_after_n_hops.to_dense().to(self.device)) - \
-                          torch.mm(index_matrix, self.ori_adj.to_dense())).to_sparse().to(self.device)
-        del index_matrix
-        del adj_after_n_hops
-
-        num_insert = where_to_insert._values().sum()
-
+        num_insert = where_to_insert.sum()
+        assert num_insert != 0, "you fucked up dude. Check where you build your new Adj matrix"
         adj_with_insert = self.ori_adj + where_to_insert / num_insert
-        del where_to_insert
 
+        del where_to_insert
         gc.collect()
 
         return adj_with_insert
 
     def get_modified_adj_with_insert_and_remove_by_gradient(self, remove_prob, insert_prob, batch_all_node,
                                                             edge_gradient):
-        adj_insert_remove = self.ori_adj.to_dense().to(self.device)
+        adj_insert_remove = self.ori_adj.to(self.device)
 
         tril_adj_index = torch.tril_indices(row=len(adj_insert_remove) - 1, col=len(adj_insert_remove) - 1, offset=0)
+        tril_adj_index = tril_adj_index.to(self.device)
         tril_adj_index_0 = tril_adj_index[0][tril_adj_index[0] != tril_adj_index[1]]
         tril_adj_index_1 = tril_adj_index[1][tril_adj_index[0] != tril_adj_index[1]]
 
         k_remove = int(remove_prob * adj_insert_remove[batch_all_node].sum())
-        edge_gradient = (edge_gradient.to_dense() * adj_insert_remove)[tril_adj_index_0, tril_adj_index_1]
+        edge_gradient = (edge_gradient * adj_insert_remove)[tril_adj_index_0, tril_adj_index_1]
         _, indices_rm = torch.topk(edge_gradient, k_remove, largest=False)
 
         low_tril_matrix = adj_insert_remove[tril_adj_index_0, tril_adj_index_1]
@@ -146,16 +135,17 @@ class GROC_loss(nn.Module):
         return adj_insert_remove
 
     def contruct_adj_after_n_hops(self):
-        adj_after_1_hops = self.ori_adj.clone().to(self.device)
         # for _ in range(1):
-        # only consider 1-hop neighbour
-        adj_after_1_hops = torch.sparse.mm(adj_after_1_hops, adj_after_1_hops) + adj_after_1_hops
-        modified_adj = torch.sparse_coo_tensor(adj_after_1_hops._indices(), (adj_after_1_hops._values() > 0).float(),
-                                               adj_after_1_hops.size())
+        # only consider 2-hop neighbour
+        # reason: if onlu 1-hop considered, only add interaction between user-user and item-item.
+        # negative: super dense tensor
+        adj_after_2_hops = self.ori_adj
+        for _ in range(2):
+            adj_after_2_hops = ((torch.mm(adj_after_2_hops, adj_after_2_hops) + adj_after_2_hops) > 0.).float()
 
-        del adj_after_1_hops
+        gc.collect()
 
-        return modified_adj
+        return adj_after_2_hops
 
     def attack_adjs(self, adj_a, adj_b, perturbations, users, posItems, negItems):
         modified_adj_a = attack_model(self.ori_model, adj_a, perturbations, self.args.path_modified_adj,
@@ -316,6 +306,8 @@ class GROC_loss(nn.Module):
         total_batch = len(users) // self.args.batch_size + 1
         ori_adj_sparse = utils.normalize_adj_tensor(self.ori_adj, sparse=True)
 
+        adj_with_2_hops = self.contruct_adj_after_n_hops()
+
         for i in range(self.args.groc_epochs):
             optimizer.zero_grad()
 
@@ -333,25 +325,30 @@ class GROC_loss(nn.Module):
                 batch_items = utils.shuffle(torch.cat((batch_pos, batch_neg))).to(self.device)
                 batch_all_node = torch.cat((batch_users, batch_items + self.num_users)).unique(sorted=False) \
                     .to(self.device)
-                if batch_all_node.shape[0] > batch_users.shape[0]:
-                    batch_all_node = batch_all_node[:batch_users.shape[0]]
-                adj_with_insert = self.get_modified_adj_for_insert(batch_all_node)  # 2 views are same
+
+                batch_all_node = batch_all_node[:10]
+                adj_with_insert = self.get_modified_adj_for_insert(batch_all_node, adj_with_2_hops)  # 2 views are same
+
                 mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1) \
                     .to(self.device)
                 mask_2 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_2) \
                     .to(self.device)
 
-                batch_users_groc = batch_all_node[batch_all_node < self.num_users]
-                batch_items = batch_all_node[batch_all_node >= self.num_users] - self.num_users
+                # batch_users_groc = batch_all_node[batch_all_node < self.num_users]
+                # batch_items = batch_all_node[batch_all_node >= self.num_users] - self.num_users
 
-                loss_for_grad = self.groc_loss(self.ori_model, adj_with_insert, adj_with_insert, batch_users_groc,
-                                               batch_items, mask_1, mask_2)
+                adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert, sparse=True)
+
+                loss_for_grad = self.ori_gcl_computing(self.ori_model, adj_for_loss_gradient, adj_for_loss_gradient,
+                                                       batch_users, batch_pos, mask_1, mask_2, query_groc=True)
 
                 # remove index of diagonal
 
-                edge_gradient = torch.autograd.grad(loss_for_grad, self.ori_model.adj, retain_graph=True)[0]
+                edge_gradient = torch.autograd.grad(loss_for_grad, self.ori_model.adj, retain_graph=True)[0].to_dense()
 
                 del adj_with_insert
+                del adj_for_loss_gradient
+                gc.collect()
 
                 adj_insert_remove_1 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_1,
                                                                                                self.args.remove_prob_1,
@@ -362,8 +359,10 @@ class GROC_loss(nn.Module):
                                                                                                batch_all_node,
                                                                                                edge_gradient)
 
-                groc_loss = self.groc_loss(self.ori_model, adj_insert_remove_1, adj_insert_remove_2, batch_users_groc,
-                                           batch_items, mask_1, mask_2)
+                groc_loss = self.ori_gcl_computing(self.ori_model,
+                                                   utils.normalize_adj_tensor(adj_insert_remove_1, sparse=True),
+                                                   utils.normalize_adj_tensor(adj_insert_remove_2, sparse=True),
+                                                   batch_users, batch_pos, mask_1, mask_2)
 
                 del adj_insert_remove_1
                 del adj_insert_remove_2
@@ -391,18 +390,24 @@ class GROC_loss(nn.Module):
                 print("BPR Loss: ", aver_bpr_loss)
                 print("DCL Loss: ", aver_dcl_loss)
 
-    def ori_gcl_computing(self, trn_model, gra1, gra2, users, poss):
-        (_, pos_emb, _, _) = trn_model.getEmbedding(self.ori_adj, users.long(), poss.long())
+    def ori_gcl_computing(self, trn_model, gra1, gra2, users, poss, mask_1=None, mask_2=None, query_groc=None):
+        (user_emb, _, _, _) = trn_model.getEmbedding(self.ori_adj, users.long(), poss.long())
 
-        (users_emb_perturb_1, _, _, _) = trn_model.getEmbedding(gra1, users.long(), poss.long())
-        users_emb_perturb_1 = nn.functional.normalize(users_emb_perturb_1, dim=1)
-        (users_emb_perturb_2, _, _, _) = trn_model.getEmbedding(gra2, users.long(), poss.long())
-        users_emb_perturb_2 = nn.functional.normalize(users_emb_perturb_2, dim=1)
+        (users_emb_perturb_1, _, _, _) = trn_model.getEmbedding(gra1, users.long(), poss.long(), query_groc=query_groc)
+        if mask_1 is not None:
+            users_emb_perturb_1 = nn.functional.normalize(users_emb_perturb_1, dim=1).masked_fill_(mask_1, 0.)
+        else:
+            users_emb_perturb_1 = nn.functional.normalize(users_emb_perturb_1, dim=1)
+        (users_emb_perturb_2, _, _, _) = trn_model.getEmbedding(gra2, users.long(), poss.long(), query_groc=query_groc)
+        if mask_2 is not None:
+            users_emb_perturb_2 = nn.functional.normalize(users_emb_perturb_2, dim=1).masked_fill_(mask_2, 0.)
+        else:
+            users_emb_perturb_2 = nn.functional.normalize(users_emb_perturb_2, dim=1)
         users_dot_12 = torch.bmm(users_emb_perturb_1.unsqueeze(1), users_emb_perturb_2.unsqueeze(2)).squeeze(2)
         users_dot_12 /= self.args.T_groc
         fenzi_12 = torch.exp(users_dot_12).sum(1)
 
-        neg_emb_users_12 = users_emb_perturb_2.unsqueeze(0).repeat(pos_emb.size(0), 1, 1)
+        neg_emb_users_12 = users_emb_perturb_2.unsqueeze(0).repeat(user_emb.size(0), 1, 1)
         neg_dot_12 = torch.bmm(neg_emb_users_12, users_emb_perturb_1.unsqueeze(2)).squeeze(2)
         neg_dot_12 /= self.args.T_groc
         neg_dot_12 = torch.exp(neg_dot_12).sum(1)
@@ -416,7 +421,7 @@ class GROC_loss(nn.Module):
         users_dot_21 /= self.args.T_groc
         fenzi_21 = torch.exp(users_dot_21).sum(1)
 
-        neg_emb_users_21 = users_emb_perturb_1.unsqueeze(0).repeat(pos_emb.size(0), 1, 1)
+        neg_emb_users_21 = users_emb_perturb_1.unsqueeze(0).repeat(user_emb.size(0), 1, 1)
         neg_dot_21 = torch.bmm(neg_emb_users_21, users_emb_perturb_2.unsqueeze(2)).squeeze(2)
         neg_dot_21 /= self.args.T_groc
         neg_dot_21 = torch.exp(neg_dot_21).sum(1)
