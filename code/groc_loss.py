@@ -74,7 +74,8 @@ class GROC_loss(nn.Module):
         """
         reset flag is a flag that indicate the adj will insert edges(flag==False, do sum) or set the adj back to original adj
         """
-        # use one hot embedding get corresponding adj_vectors and get the unique vector that merge all interaction info of these nodes, namely add edges
+        # use one-hot embedding matrix to index 2 adj matrix(1. adj with 2 hops, 2. original adj) and subtract the
+        # result to see, where to insert new edges
         i = torch.stack((batch_nodes, batch_nodes))
         v = torch.ones(i.shape[1]).to(self.device)
         batch_nodes_in_matrix = torch.sparse_coo_tensor(i, v, adj_with_2_hops.shape).to(self.device)
@@ -142,8 +143,6 @@ class GROC_loss(nn.Module):
         adj_after_2_hops = self.ori_adj
         for _ in range(2):
             adj_after_2_hops = ((torch.mm(adj_after_2_hops, adj_after_2_hops) + adj_after_2_hops) > 0.).float()
-
-        gc.collect()
 
         return adj_after_2_hops
 
@@ -304,9 +303,9 @@ class GROC_loss(nn.Module):
                                        self.args.groc_epochs)
 
         total_batch = len(users) // self.args.batch_size + 1
-        ori_adj_sparse = utils.normalize_adj_tensor(self.ori_adj, sparse=True)
+        ori_adj_sparse = utils.normalize_adj_tensor(self.ori_adj, sparse=True)  # for bpr loss
 
-        adj_with_2_hops = self.contruct_adj_after_n_hops()
+        adj_with_2_hops = self.contruct_adj_after_n_hops()  # dense
 
         for i in range(self.args.groc_epochs):
             optimizer.zero_grad()
@@ -326,7 +325,7 @@ class GROC_loss(nn.Module):
                 batch_all_node = torch.cat((batch_users, batch_items + self.num_users)).unique(sorted=False) \
                     .to(self.device)
 
-                batch_all_node = batch_all_node[:10]
+                batch_all_node = batch_all_node[:10]  # only select 10 anchor nodes for adj_edge insertion
                 adj_with_insert = self.get_modified_adj_for_insert(batch_all_node, adj_with_2_hops)  # 2 views are same
 
                 mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1) \
