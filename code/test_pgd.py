@@ -72,15 +72,12 @@ torch.manual_seed(args.seed)
 if device != 'cpu':
     torch.cuda.manual_seed(args.seed)
 
-now = datetime.now()
-current_time = now.strftime("%H:%M:%S")
-print("Current Time before load adj_matrix=", current_time)
-
 adj = dataset.getSparseGraph()
-adj = torch.FloatTensor(adj.todense()).to(device)
-
-# perturbations = int(args.ptb_rate * ((dataset.trainDataSize+dataset.testDataSize)//2))
 perturbations = int(args.ptb_rate * (adj.sum() // args.perturb_strength_list[args.modified_adj_id]))
+# perturbations = int(args.ptb_rate * ((dataset.trainDataSize+dataset.testDataSize)//2))
+
+# adj = torch.FloatTensor(adj).to(device)
+adj = utils.sparse_mx_to_torch_sparse_tensor(adj).to(device)
 
 users, posItems, negItems = utils.getTrainSet(dataset)
 data_len = len(users)
