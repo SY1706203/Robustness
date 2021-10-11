@@ -76,7 +76,7 @@ class GROC_loss(nn.Module):
         """
         # use one hot embedding get corresponding adj_vectors and get the unique vector that merge all interaction info of these nodes, namely add edges
         i = torch.stack((batch_nodes, batch_nodes))
-        v = torch.ones(i.shape[1])
+        v = torch.ones(i.shape[1]).to(self.device)
         batch_nodes_in_matrix = torch.sparse_coo_tensor(i, v, adj_with_2_hops.shape).to(self.device)
 
         # make sure there are no connections between users and users / items and items
