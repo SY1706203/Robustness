@@ -82,6 +82,10 @@ perturbations = int(args.ptb_rate * (adj.sum() // args.perturb_strength_list[arg
 
 users, posItems, negItems = utils.getTrainSet(dataset)
 data_len = len(users)
+
+users = users[:15]
+posItems = posItems[:15]
+negItems = negItems[:15]
 # Setup and fit origin Model
 
 Recmodel = lightgcn.LightGCN(device)

@@ -1,4 +1,5 @@
 import torch
+import gc
 import numpy as np
 from lightgcn import LightGCN
 from GraphContrastiveLoss import ori_gcl_computing
@@ -37,7 +38,13 @@ class IntegratedGradients:
             assert ori_model.adj == adj_step, "Sorry it's fucked up bro. Report the bug to the author pls, Thank you very much"
             grads = torch.autograd.grad(loss_for_grad, ori_model.adj, retain_graph=True)[0]
 
+            del adj_step
+
             total_gradients += grads
+
+            del grads
+
+        gc.collect()
 
         if self._is_sparse:
             total_gradients = torch.sparse.mm(total_gradients, adj_diff) / steps
