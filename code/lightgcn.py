@@ -31,6 +31,16 @@ class LightGCN(nn.Module):
         nn.init.xavier_uniform_(self.embedding_user.weight, gain=1)
         nn.init.xavier_uniform_(self.embedding_item.weight, gain=1)
 
+    def adj_getter(self):
+        if self.adj is None:
+            raise Exception(
+                "Adj doesn't exist in the LightGCN model. Make sure you called adj_setter first and then call adj_getter."
+            )
+        return self.adj
+
+    def adj_setter(self, adj):
+        pass
+
     def fit(self, adj, users, posItems, negItems):
         if type(adj) is not torch.Tensor:
             adj_norm = utils.normalize_adj_tensor(adj, sparse=True)

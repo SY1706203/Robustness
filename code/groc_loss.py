@@ -6,6 +6,8 @@ from utils import scheduler_groc
 from utils_attack import attack_model
 import utils
 import torch.nn.functional as F
+from IntegratedGradient import IntegratedGradients
+from GraphContrastiveLoss import ori_gcl_computing
 
 
 class GROC_loss(nn.Module):
@@ -17,6 +19,7 @@ class GROC_loss(nn.Module):
         self.args = args
         self.num_users = self.ori_model.num_users
         self.num_items = self.ori_model.num_items
+        self.integrated_gradient = IntegratedGradients(self.ori_model, self.device, sparse=False)
 
     def get_embed_groc(self, trn_model, modified_adj, users, items, mask):
 
@@ -338,13 +341,19 @@ class GROC_loss(nn.Module):
 
                 adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert, sparse=True)
 
-                loss_for_grad = self.ori_gcl_computing(self.ori_model, adj_for_loss_gradient, adj_for_loss_gradient,
-                                                       batch_users, batch_pos, mask_1, mask_2, query_groc=True)
+                if self.args.normal_gradients:
+                    loss_for_grad = ori_gcl_computing(self.ori_adj, self.ori_model, adj_for_loss_gradient,
+                                                      adj_for_loss_gradient, batch_users, batch_pos, self.args,
+                                                      self.device, mask_1, mask_2, query_groc=True)
 
-                # remove index of diagonal
+                    # remove index of diagonal
 
-                edge_gradient = torch.autograd.grad(loss_for_grad, self.ori_model.adj, retain_graph=True)[0].to_dense()
-
+                    edge_gradient = torch.autograd.grad(loss_for_grad, self.ori_model.adj, retain_graph=True)[0].to_dense()
+                else:
+                    edge_gradient = self.integrated_gradient.get_integrated_gradient(adj_for_loss_gradient,
+                                                                                     self.ori_model, self.ori_adj,
+                                                                                     batch_users, batch_items,
+                                                                                     mask_1, mask_2).to_dense()
                 del adj_with_insert
                 del adj_for_loss_gradient
                 gc.collect()
@@ -389,59 +398,6 @@ class GROC_loss(nn.Module):
                 print("BPR Loss: ", aver_bpr_loss)
                 print("DCL Loss: ", aver_dcl_loss)
 
-    def ori_gcl_computing(self, trn_model, gra1, gra2, users, poss, mask_1=None, mask_2=None, query_groc=None):
-        (user_emb, _, _, _) = trn_model.getEmbedding(self.ori_adj, users.long(), poss.long())
-
-        (users_emb_perturb_1, _, _, _) = trn_model.getEmbedding(gra1, users.long(), poss.long(), query_groc=query_groc)
-        if mask_1 is not None:
-            users_emb_perturb_1 = nn.functional.normalize(users_emb_perturb_1, dim=1).masked_fill_(mask_1, 0.)
-        else:
-            users_emb_perturb_1 = nn.functional.normalize(users_emb_perturb_1, dim=1)
-        (users_emb_perturb_2, _, _, _) = trn_model.getEmbedding(gra2, users.long(), poss.long(), query_groc=query_groc)
-        if mask_2 is not None:
-            users_emb_perturb_2 = nn.functional.normalize(users_emb_perturb_2, dim=1).masked_fill_(mask_2, 0.)
-        else:
-            users_emb_perturb_2 = nn.functional.normalize(users_emb_perturb_2, dim=1)
-        users_dot_12 = torch.bmm(users_emb_perturb_1.unsqueeze(1), users_emb_perturb_2.unsqueeze(2)).squeeze(2)
-        users_dot_12 /= self.args.T_groc
-        fenzi_12 = torch.exp(users_dot_12).sum(1)
-
-        neg_emb_users_12 = users_emb_perturb_2.unsqueeze(0).repeat(user_emb.size(0), 1, 1)
-        neg_dot_12 = torch.bmm(neg_emb_users_12, users_emb_perturb_1.unsqueeze(2)).squeeze(2)
-        neg_dot_12 /= self.args.T_groc
-        neg_dot_12 = torch.exp(neg_dot_12).sum(1)
-
-        mask_11 = self.get_negative_mask_perturb(users_emb_perturb_1.size(0)).to(self.device)
-        neg_dot_11 = torch.exp(torch.mm(users_emb_perturb_1, users_emb_perturb_1.t()) / self.args.T_groc)
-        neg_dot_11 = neg_dot_11.masked_select(mask_11).view(users_emb_perturb_1.size(0), -1).sum(1)
-        loss_perturb_11 = (-torch.log(fenzi_12 / (neg_dot_11 + neg_dot_12))).mean()
-
-        users_dot_21 = torch.bmm(users_emb_perturb_2.unsqueeze(1), users_emb_perturb_1.unsqueeze(2)).squeeze(2)
-        users_dot_21 /= self.args.T_groc
-        fenzi_21 = torch.exp(users_dot_21).sum(1)
-
-        neg_emb_users_21 = users_emb_perturb_1.unsqueeze(0).repeat(user_emb.size(0), 1, 1)
-        neg_dot_21 = torch.bmm(neg_emb_users_21, users_emb_perturb_2.unsqueeze(2)).squeeze(2)
-        neg_dot_21 /= self.args.T_groc
-        neg_dot_21 = torch.exp(neg_dot_21).sum(1)
-
-        mask_22 = self.get_negative_mask_perturb(users_emb_perturb_2.size(0)).to(self.device)
-        neg_dot_22 = torch.exp(torch.mm(users_emb_perturb_2, users_emb_perturb_2.t()) / self.args.T_groc)
-        neg_dot_22 = neg_dot_22.masked_select(mask_22).view(users_emb_perturb_2.size(0), -1).sum(1)
-        loss_perturb_22 = (-torch.log(fenzi_21 / (neg_dot_22 + neg_dot_21))).mean()
-
-        loss_perturb = loss_perturb_11 + loss_perturb_22
-
-        return loss_perturb
-
-    @staticmethod
-    def get_negative_mask_perturb(batch_size):
-        negative_mask = torch.ones((batch_size, batch_size), dtype=bool)
-        for i in range(batch_size):
-            negative_mask[i, i] = 0
-
-        return negative_mask
-
     def ori_gcl_train_with_bpr(self, gra1, gra2, data_len_, users, posItems, negItems):
         self.ori_adj = utils.normalize_adj_tensor(self.ori_adj, sparse=True)
         gra1 = utils.normalize_adj_tensor(gra1, sparse=True)
@@ -482,7 +438,8 @@ class GROC_loss(nn.Module):
             for (batch_i, (batch_users, batch_pos, batch_neg)) \
                     in enumerate(utils.minibatch(users, posItems, negItems, batch_size=self.args.batch_size)):
 
-                gcl = self.ori_gcl_computing(self.ori_model, gra1, gra2, batch_users, batch_pos)
+                gcl = ori_gcl_computing(self.ori_adj, self.ori_model, gra1, gra2, batch_users, batch_pos, self.args,
+                                        self.device)
 
                 bpr_loss, reg_loss = self.ori_model.bpr_loss(self.ori_adj, batch_users, batch_pos, batch_neg)
                 reg_loss = reg_loss * self.ori_model.weight_decay
