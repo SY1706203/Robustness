@@ -50,7 +50,7 @@ def ori_gcl_computing(ori_adj, trn_model, gra1, gra2, users, poss, args, device,
 
 
 def get_negative_mask_perturb(batch_size):
-    negative_mask = torch.ones((batch_size, batch_size), dtype=bool)
+    negative_mask = torch.ones(batch_size, batch_size).bool()
     for i in range(batch_size):
         negative_mask[i, i] = 0
 
