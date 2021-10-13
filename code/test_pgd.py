@@ -175,7 +175,8 @@ if args.train_groc:
         groc.groc_train_with_bpr(data_len, users, posItems, negItems)
 
         print("save model")
-        torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) + '/data/LightGCN_after_GROC.pt')
+        torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) +
+                   '/data/LightGCN_after_GROC_{}.pt'.format(args.loss_weight_bpr))
         print("===========================")
 
         print("original model performance on original adjacency matrix:")

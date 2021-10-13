@@ -92,7 +92,7 @@ class GROC_loss(nn.Module):
         where_to_insert = (torch.sparse.mm(batch_nodes_in_matrix, adj_with_2_hops) -
                            torch.sparse.mm(batch_nodes_in_matrix, self.ori_adj)).to(self.device)
 
-        num_insert = where_to_insert.sum() / 100
+        num_insert = where_to_insert.sum() // 100
         assert num_insert != 0, "you fucked up dude. Check where you build your new Adj matrix"
         adj_with_insert = self.ori_adj + where_to_insert / num_insert
 
@@ -102,8 +102,8 @@ class GROC_loss(nn.Module):
         return adj_with_insert
 
     def get_modified_adj_with_insert_and_remove_by_gradient(self, remove_prob, insert_prob, batch_all_node,
-                                                            edge_gradient):
-        adj_insert_remove = self.ori_adj.to(self.device)
+                                                            edge_gradient, adj_with_insert):
+        adj_insert_remove = self.ori_adj.clone().to(self.device)
 
         tril_adj_index = torch.tril_indices(row=len(adj_insert_remove) - 1, col=len(adj_insert_remove) - 1, offset=0)
         tril_adj_index = tril_adj_index.to(self.device)
@@ -111,8 +111,8 @@ class GROC_loss(nn.Module):
         tril_adj_index_1 = tril_adj_index[1][tril_adj_index[0] != tril_adj_index[1]]
 
         k_remove = int(remove_prob * adj_insert_remove[batch_all_node].sum())
-        edge_gradient = (edge_gradient * adj_insert_remove)[tril_adj_index_0, tril_adj_index_1]
-        _, indices_rm = torch.topk(edge_gradient, k_remove, largest=False)
+        edge_gradient_insert = (edge_gradient * adj_insert_remove)[tril_adj_index_0, tril_adj_index_1]
+        _, indices_rm = torch.topk(edge_gradient_insert, k_remove, largest=False)
 
         low_tril_matrix = adj_insert_remove[tril_adj_index_0, tril_adj_index_1]
         up_tril_matrix = adj_insert_remove[tril_adj_index_1, tril_adj_index_0]
@@ -120,7 +120,8 @@ class GROC_loss(nn.Module):
         up_tril_matrix[indices_rm] = 0.
 
         k_insert = int(insert_prob * len(batch_all_node) * (len(batch_all_node) - 1) / 2)
-        _, indices_ir = torch.topk(edge_gradient, k_insert)
+        edge_gradient_remove = (edge_gradient * (adj_with_insert - self.ori_adj))[tril_adj_index_0, tril_adj_index_1]
+        _, indices_ir = torch.topk(edge_gradient_remove, k_insert)
         low_tril_matrix[indices_ir] = 1.
         up_tril_matrix[indices_ir] = 1.
 
@@ -133,6 +134,10 @@ class GROC_loss(nn.Module):
 
         del low_tril_matrix
         del up_tril_matrix
+
+        del edge_gradient
+        del edge_gradient_insert
+        del edge_gradient_remove
 
         gc.collect()
 
@@ -328,8 +333,8 @@ class GROC_loss(nn.Module):
                 batch_all_node = torch.cat((batch_users, batch_items + self.num_users)).unique(sorted=False) \
                     .to(self.device)
 
-                batch_all_node = batch_all_node[:10]  # only select 10 anchor nodes for adj_edge insertion
-                adj_with_insert = self.get_modified_adj_for_insert(batch_all_node, adj_with_2_hops)  # 2 views are same
+                batch_users_unique = batch_users.unique()[:10]  # only select 10 anchor nodes for adj_edge insertion
+                adj_with_insert = self.get_modified_adj_for_insert(batch_users_unique, adj_with_2_hops)  # 2 views are same
 
                 mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1) \
                     .to(self.device)
@@ -354,23 +359,26 @@ class GROC_loss(nn.Module):
                                                                                      self.ori_model, self.ori_adj,
                                                                                      batch_users, batch_items,
                                                                                      mask_1, mask_2).to_dense()
-                del adj_with_insert
                 del adj_for_loss_gradient
                 gc.collect()
 
                 adj_insert_remove_1 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_1,
                                                                                                self.args.remove_prob_1,
                                                                                                batch_all_node,
-                                                                                               edge_gradient)
+                                                                                               edge_gradient,
+                                                                                               adj_with_insert)
                 adj_insert_remove_2 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_2,
                                                                                                self.args.remove_prob_2,
                                                                                                batch_all_node,
-                                                                                               edge_gradient)
+                                                                                               edge_gradient,
+                                                                                               adj_with_insert)
 
-                groc_loss = self.ori_gcl_computing(self.ori_model,
-                                                   utils.normalize_adj_tensor(adj_insert_remove_1, sparse=True),
-                                                   utils.normalize_adj_tensor(adj_insert_remove_2, sparse=True),
-                                                   batch_users, batch_pos, mask_1, mask_2)
+                del adj_with_insert
+
+                groc_loss = ori_gcl_computing(self.ori_adj, self.ori_model,
+                                              utils.normalize_adj_tensor(adj_insert_remove_1, sparse=True),
+                                              utils.normalize_adj_tensor(adj_insert_remove_2, sparse=True),
+                                              batch_users, batch_pos, self.args, self.device, mask_1, mask_2)
 
                 del adj_insert_remove_1
                 del adj_insert_remove_2
