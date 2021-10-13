@@ -172,7 +172,7 @@ class LightGCN(nn.Module):
     def _train_without_val(self, adj, users, posItems, negItems):
         self.train()
         optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        for i in range(1):
+        for i in range(100):
             optimizer.zero_grad()
             users = users.to(self.device)
             posItems = posItems.to(self.device)
