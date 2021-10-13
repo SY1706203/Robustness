@@ -92,7 +92,7 @@ class GROC_loss(nn.Module):
         where_to_insert = (torch.sparse.mm(batch_nodes_in_matrix, adj_with_2_hops) -
                            torch.sparse.mm(batch_nodes_in_matrix, self.ori_adj)).to(self.device)
 
-        num_insert = where_to_insert.sum() / 10
+        num_insert = where_to_insert.sum() / 100
         assert num_insert != 0, "you fucked up dude. Check where you build your new Adj matrix"
         adj_with_insert = self.ori_adj + where_to_insert / num_insert
 
