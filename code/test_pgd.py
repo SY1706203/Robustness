@@ -75,6 +75,11 @@ if device != 'cpu':
 adj = dataset.getSparseGraph()
 adj = torch.FloatTensor(adj.todense()).to(device)
 
+rowsum = adj.sum(1)
+r_inv = rowsum.pow(-1 / 2).flatten()
+r_inv[torch.isinf(r_inv)] = 0.
+d_mtr = torch.diag(r_inv).to_sparse().to(device)
+
 perturbations = int(args.ptb_rate * (adj.sum() // args.perturb_strength_list[args.modified_adj_id]))
 # perturbations = int(args.ptb_rate * ((dataset.trainDataSize+dataset.testDataSize)//2))
 
@@ -171,7 +176,7 @@ if args.train_groc:
 
     if args.groc_with_bpr:
         print("Mode:GROC + BPR")
-        groc = GROC_loss(Recmodel, adj, args)
+        groc = GROC_loss(Recmodel, adj, d_mtr, args)
         groc.groc_train_with_bpr(data_len, users, posItems, negItems)
 
         print("save model")

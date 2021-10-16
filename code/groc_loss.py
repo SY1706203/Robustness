@@ -11,11 +11,12 @@ from GraphContrastiveLoss import ori_gcl_computing
 
 
 class GROC_loss(nn.Module):
-    def __init__(self, ori_model, ori_adj, args):
+    def __init__(self, ori_model, ori_adj, d_mtr, args):
         super(GROC_loss, self).__init__()
         self.ori_adj = ori_adj
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.ori_model = ori_model
+        self.d_mtr = d_mtr
         self.args = args
         self.num_users = self.ori_model.num_users
         self.num_items = self.ori_model.num_items
@@ -120,8 +121,14 @@ class GROC_loss(nn.Module):
         tril_adj_index_1 = tril_adj_index[1][tril_adj_index[0] != tril_adj_index[1]]
 
         k_remove = int(remove_prob * self.ori_adj[batch_users_unique].sum())
+
+        mask = torch.eye(self.ori_adj.size(0), self.ori_adj.size(1)).bool().to(self.device)
+        edge_gradient = edge_gradient.masked_fill_(mask, 0.)
+
+        edge_gradient_remove_norm = torch.sparse.mm(self.d_mtr, edge_gradient)
+        edge_gradient_remove_norm = torch.sparse.mm(self.d_mtr.t(), edge_gradient_remove_norm.T).T
         edge_gradient_remove = \
-            (edge_gradient * torch.sparse.mm(batch_nodes_in_matrix, adj_insert_remove))[tril_adj_index_1, tril_adj_index_0]
+            torch.sparse.mm(batch_nodes_in_matrix, edge_gradient_remove_norm)[tril_adj_index_1, tril_adj_index_0]
 
         _, indices_rm = torch.topk(edge_gradient_remove, k_remove, largest=False)
 
@@ -341,8 +348,6 @@ class GROC_loss(nn.Module):
                     in enumerate(utils.minibatch(users, posItems, negItems, batch_size=self.args.batch_size)):
 
                 batch_items = utils.shuffle(torch.cat((batch_pos, batch_neg))).to(self.device)
-                batch_all_node = torch.cat((batch_users, batch_items + self.num_users)).unique(sorted=False) \
-                    .to(self.device)
 
                 batch_users_unique = batch_users.unique()  # only select 10 anchor nodes for adj_edge insertion
                 adj_with_insert = self.get_modified_adj_for_insert(batch_users_unique, adj_with_2_hops)  # 2 views are same
