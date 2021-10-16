@@ -349,7 +349,7 @@ class GROC_loss(nn.Module):
 
                 batch_items = utils.shuffle(torch.cat((batch_pos, batch_neg))).to(self.device)
 
-                batch_users_unique = batch_users.unique()  # only select 10 anchor nodes for adj_edge insertion
+                batch_users_unique = batch_users.unique()[:10]  # only select 10 anchor nodes for adj_edge insertion
                 adj_with_insert = self.get_modified_adj_for_insert(batch_users_unique, adj_with_2_hops)  # 2 views are same
 
                 mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1) \
