@@ -122,12 +122,10 @@ class GROC_loss(nn.Module):
 
         k_remove = int(remove_prob * self.ori_adj[batch_users_unique].sum())
 
-        mask = torch.eye(self.ori_adj.size(0), self.ori_adj.size(1)).bool().to(self.device)
-        edge_gradient = edge_gradient.masked_fill_(mask, 0.)
-
         edge_gradient_remove_norm = torch.sparse.mm(self.d_mtr, edge_gradient)
         edge_gradient_remove_norm = torch.sparse.mm(self.d_mtr.t(), edge_gradient_remove_norm.T).T
         edge_gradient_remove = \
+            self.ori_adj * \
             torch.sparse.mm(batch_nodes_in_matrix, edge_gradient_remove_norm)[tril_adj_index_1, tril_adj_index_0]
 
         _, indices_rm = torch.topk(edge_gradient_remove, k_remove, largest=False)
@@ -138,7 +136,8 @@ class GROC_loss(nn.Module):
         up_tril_matrix[indices_rm] = 0.
 
         k_insert = int(insert_prob * len(batch_users_unique) * (len(batch_users_unique) - 1) / 2)
-        edge_gradient_insert = (edge_gradient * (adj_with_insert - self.ori_adj))[tril_adj_index_0, tril_adj_index_1]
+        edge_gradient_insert = (edge_gradient_remove_norm *
+                                (adj_with_insert - self.ori_adj))[tril_adj_index_0, tril_adj_index_1]
         _, indices_ir = torch.topk(edge_gradient_insert, k_insert)
         low_tril_matrix[indices_ir] = 1.
         up_tril_matrix[indices_ir] = 1.
