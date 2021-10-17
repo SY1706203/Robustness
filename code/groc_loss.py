@@ -125,8 +125,8 @@ class GROC_loss(nn.Module):
         edge_gradient_remove_norm = torch.sparse.mm(self.d_mtr, edge_gradient)
         edge_gradient_remove_norm = torch.sparse.mm(self.d_mtr.t(), edge_gradient_remove_norm.T).T
         edge_gradient_remove = \
-            self.ori_adj * \
-            torch.sparse.mm(batch_nodes_in_matrix, edge_gradient_remove_norm)[tril_adj_index_1, tril_adj_index_0]
+            (self.ori_adj * \
+             torch.sparse.mm(batch_nodes_in_matrix, edge_gradient_remove_norm))[tril_adj_index_1, tril_adj_index_0]
 
         _, indices_rm = torch.topk(edge_gradient_remove, k_remove, largest=False)
 
