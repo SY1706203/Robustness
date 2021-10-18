@@ -345,12 +345,23 @@ class GROC_loss(nn.Module):
                 batch_items = utils.shuffle(torch.cat((batch_pos, batch_neg))).to(self.device)
 
                 batch_users_unique = batch_users.unique()  # only select 10 anchor nodes for adj_edge insertion
+                now = datetime.now()
+                current_time = now.strftime("%H:%M:%S")
+                print("Current Time after batch construction=", current_time)
+                print("=======================")
                 adj_with_insert = self.get_modified_adj_for_insert(batch_users_unique, adj_with_2_hops)  # 2 views are same
-
+                now = datetime.now()
+                current_time = now.strftime("%H:%M:%S")
+                print("Current Time after construction of adj with insertion=", current_time)
+                print("=======================")
                 mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1) \
                     .to(self.device)
                 mask_2 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_2) \
                     .to(self.device)
+                now = datetime.now()
+                current_time = now.strftime("%H:%M:%S")
+                print("Current Time after 2 masks construction=", current_time)
+                print("=======================")
 
                 # batch_users_groc = batch_all_node[batch_all_node < self.num_users]
                 # batch_items = batch_all_node[batch_all_node >= self.num_users] - self.num_users
@@ -361,10 +372,18 @@ class GROC_loss(nn.Module):
                     loss_for_grad = ori_gcl_computing(self.ori_adj, self.ori_model, adj_for_loss_gradient,
                                                       adj_for_loss_gradient, batch_users, batch_pos, self.args,
                                                       self.device, mask_1, mask_2, query_groc=True)
+                    now = datetime.now()
+                    current_time = now.strftime("%H:%M:%S")
+                    print("Current Time after gcl calculation=", current_time)
+                    print("=======================")
 
                     # remove index of diagonal
 
                     edge_gradient = torch.autograd.grad(loss_for_grad, self.ori_model.adj, retain_graph=True)[0].to_dense()
+                    now = datetime.now()
+                    current_time = now.strftime("%H:%M:%S")
+                    print("Current Time after edge_gradient calculation=", current_time)
+                    print("=======================")
                 else:
                     edge_gradient = self.integrated_gradient.get_integrated_gradient(adj_for_loss_gradient,
                                                                                      self.ori_model, self.ori_adj,
@@ -380,14 +399,22 @@ class GROC_loss(nn.Module):
                                                                                                adj_with_insert,
                                                                                                tril_adj_index_0,
                                                                                                tril_adj_index_1)
+                now = datetime.now()
+                current_time = now.strftime("%H:%M:%S")
+                print("Current Time after adj_insert_remove_1 construction=", current_time)
+                print("=======================")
                 adj_insert_remove_2 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_2,
                                                                                                self.args.remove_prob_2,
                                                                                                batch_users_unique,
                                                                                                edge_gradient,
                                                                                                adj_with_insert,
                                                                                                tril_adj_index_0,
-                                                                                               tril_adj_index_1
-                                                                                               )
+                                                                                               tril_adj_index_1)
+
+                now = datetime.now()
+                current_time = now.strftime("%H:%M:%S")
+                print("Current Time after adj_insert_remove_2 construction=", current_time)
+                print("=======================")
 
                 del adj_with_insert
 
@@ -396,14 +423,30 @@ class GROC_loss(nn.Module):
                                               utils.normalize_adj_tensor(adj_insert_remove_2, sparse=True),
                                               batch_users, batch_pos, self.args, self.device, mask_1, mask_2)
 
+                now = datetime.now()
+                current_time = now.strftime("%H:%M:%S")
+                print("Current Time after gcl calculation=", current_time)
+                print("=======================")
+
                 del adj_insert_remove_1
                 del adj_insert_remove_2
 
                 bpr_loss, reg_loss = self.ori_model.bpr_loss(ori_adj_sparse, batch_users, batch_pos, batch_neg)
                 reg_loss = reg_loss * self.ori_model.weight_decay
 
+                now = datetime.now()
+                current_time = now.strftime("%H:%M:%S")
+                print("Current Time after bpr calculation=", current_time)
+                print("=======================")
+
                 loss = self.args.loss_weight_bpr * bpr_loss + reg_loss + (1 - self.args.loss_weight_bpr) * groc_loss
                 loss.backward()
+
+                now = datetime.now()
+                current_time = now.strftime("%H:%M:%S")
+                print("Current Time after groc backwards=", current_time)
+                print("=======================")
+
                 optimizer.step()
 
                 if self.args.use_scheduler:
