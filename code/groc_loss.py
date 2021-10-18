@@ -458,13 +458,17 @@ class GROC_loss(nn.Module):
                                                                                                tril_adj_index_1)
 
                 del adj_with_insert
+                tic_toal = time.time()
+                adj_norm_1 = utils.normalize_adj_tensor(adj_insert_remove_1).to_sparse().to(self.device)
+                adj_norm_2 = utils.normalize_adj_tensor(adj_insert_remove_2).to_sparse().to(self.device)
+                toc = time.time()
+                print("time to calculate 2 normalizations: {} s".format(toc - tic_toal))
                 tic = time.time()
-                groc_loss = ori_gcl_computing(self.ori_adj, self.ori_model,
-                                              utils.normalize_adj_tensor(adj_insert_remove_1),
-                                              utils.normalize_adj_tensor(adj_insert_remove_2),
-                                              batch_users, batch_pos, self.args, self.device, mask_1, mask_2)
+                groc_loss = ori_gcl_computing(self.ori_adj, self.ori_model, adj_norm_1, adj_norm_2, batch_users,
+                                              batch_pos, self.args, self.device, mask_1, mask_2)
                 toc = time.time()
                 print("time to calculate 2nd GCL: {} s".format(toc - tic))
+                print("time to calculate 2nd GCL including calculation of normalization: {} s".format(toc - tic_toal))
 
                 del adj_insert_remove_1
                 del adj_insert_remove_2
@@ -489,6 +493,10 @@ class GROC_loss(nn.Module):
                 aver_bpr_loss += bpr_loss.cpu().item()
                 aver_groc_loss += groc_loss.cpu().item()
                 print("batch ended here")
+
+                now = datetime.now()
+                current_time = now.strftime("%H:%M:%S")
+                print("batch ended time=", current_time)
                 print("=======================")
 
             aver_loss = aver_loss / total_batch
