@@ -75,7 +75,7 @@ def normalize_adj_tensor(adj, m_d=None, sparse=False):
     if sparse:
 
         index = torch.arange(0, adj.size()[0])
-        i = torch.stack((index, index))
+        i = torch.stack((index, index)).to(device)
         v = torch.ones(i.shape[1]).to(device)
         e = torch.sparse_coo_tensor(i, v, adj.size()).to(device)
 
