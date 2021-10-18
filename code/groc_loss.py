@@ -415,6 +415,7 @@ class GROC_loss(nn.Module):
                     loss_for_grad = ori_gcl_computing(self.ori_adj, self.ori_model, adj_for_loss_gradient,
                                                       adj_for_loss_gradient, batch_users, batch_pos, self.args,
                                                       self.device, mask_1, mask_2, query_groc=True)
+                    edge_gradient = torch.autograd.grad(loss_for_grad, self.ori_model.adj, retain_graph=True)[0].to_dense()
 
                 else:
                     edge_gradient = self.integrated_gradient.get_integrated_gradient(adj_for_loss_gradient,
