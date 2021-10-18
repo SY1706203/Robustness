@@ -395,8 +395,6 @@ class GROC_loss(nn.Module):
             aver_groc_loss = 0.
             for (batch_i, (batch_users, batch_pos, batch_neg)) \
                     in enumerate(utils.minibatch(users, posItems, negItems, batch_size=self.args.batch_size)):
-                print("current batch:", batch_i)
-
                 batch_items = utils.shuffle(torch.cat((batch_pos, batch_neg))).to(self.device)
 
                 batch_users_unique = batch_users.unique()  # only select 10 anchor nodes for adj_edge insertion
@@ -410,26 +408,14 @@ class GROC_loss(nn.Module):
 
                 # batch_users_groc = batch_all_node[batch_all_node < self.num_users]
                 # batch_items = batch_all_node[batch_all_node >= self.num_users] - self.num_users
-                tic = time.time()
-                adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert).to_sparse().to(self.device)
-                toc = time.time()
 
-                print("Normalize adj time consumption:", toc-tic)
+                adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert).to_sparse().to(self.device)
 
                 if self.args.normal_gradients:
-                    tic = time.time()
                     loss_for_grad = ori_gcl_computing(self.ori_adj, self.ori_model, adj_for_loss_gradient,
                                                       adj_for_loss_gradient, batch_users, batch_pos, self.args,
                                                       self.device, mask_1, mask_2, query_groc=True)
 
-                    toc = time.time()
-                    print("GCL_for_gradient computing time:", toc-tic)
-
-                    # remove index of diagonal
-                    tic = time.time()
-                    edge_gradient = torch.autograd.grad(loss_for_grad, self.ori_model.adj, retain_graph=True)[0]
-                    toc = time.time()
-                    print("GCL_for_gradient AUTOGRAD computing time:", toc - tic)
                 else:
                     edge_gradient = self.integrated_gradient.get_integrated_gradient(adj_for_loss_gradient,
                                                                                      self.ori_model, self.ori_adj,
@@ -437,7 +423,7 @@ class GROC_loss(nn.Module):
                                                                                      mask_1, mask_2)
                 del adj_for_loss_gradient
                 gc.collect()
-                tic = time.time()
+
                 adj_insert_remove_1 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_1,
                                                                                                self.args.remove_prob_1,
                                                                                                batch_users_unique,
@@ -445,8 +431,6 @@ class GROC_loss(nn.Module):
                                                                                                adj_with_insert,
                                                                                                tril_adj_index_0,
                                                                                                tril_adj_index_1)
-                toc = time.time()
-                print("adj_insert_remove adj construction time:", toc - tic)
 
                 adj_insert_remove_2 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_2,
                                                                                                self.args.remove_prob_2,
@@ -457,15 +441,10 @@ class GROC_loss(nn.Module):
                                                                                                tril_adj_index_1)
 
                 del adj_with_insert
-                tic = time.time()
                 groc_loss = ori_gcl_computing(self.ori_adj, self.ori_model,
                                               utils.normalize_adj_tensor(adj_insert_remove_1).to_sparse().to(self.device),
                                               utils.normalize_adj_tensor(adj_insert_remove_2).to_sparse().to(self.device),
                                               batch_users, batch_pos, self.args, self.device, mask_1, mask_2)
-                toc = time.time()
-                print("GCL computing time:", toc - tic)
-                print("Batch print info ended here")
-                print("=============================================================")
 
                 del adj_insert_remove_1
                 del adj_insert_remove_2
