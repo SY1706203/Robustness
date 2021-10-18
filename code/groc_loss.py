@@ -114,7 +114,7 @@ class GROC_loss(nn.Module):
         k_remove = int(remove_prob * self.ori_adj[batch_users_unique].sum())
 
         edge_gradient_remove_norm = torch.sparse.mm(self.d_mtr, edge_gradient)
-        edge_gradient_remove_norm = torch.sparse.mm(self.d_mtr.t(), edge_gradient_remove_norm.T).T
+        edge_gradient_remove_norm = torch.sparse.mm(edge_gradient_remove_norm, self.d_mtr).to_dense().to(self.device)
         edge_gradient_remove = \
             (self.ori_adj * \
              torch.sparse.mm(batch_nodes_in_matrix, edge_gradient_remove_norm))[tril_adj_index_1, tril_adj_index_0]
@@ -373,7 +373,7 @@ class GROC_loss(nn.Module):
                                        self.args.groc_epochs)
 
         total_batch = len(users) // self.args.batch_size + 1
-        ori_adj_sparse = utils.normalize_adj_tensor(self.ori_adj, sparse=True)  # for bpr loss
+        ori_adj_sparse = utils.normalize_adj_tensor(self.ori_adj).to_sparse().to(self.device)  # for bpr loss
 
         adj_with_2_hops = self.contruct_adj_after_n_hops()  # dense
 
@@ -411,7 +411,7 @@ class GROC_loss(nn.Module):
                 # batch_users_groc = batch_all_node[batch_all_node < self.num_users]
                 # batch_items = batch_all_node[batch_all_node >= self.num_users] - self.num_users
                 tic = time.time()
-                adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert, sparse=True)
+                adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert).to_sparse().to(self.device)
                 toc = time.time()
 
                 print("Normalize adj time consumption:", toc-tic)
@@ -427,14 +427,14 @@ class GROC_loss(nn.Module):
 
                     # remove index of diagonal
                     tic = time.time()
-                    edge_gradient = torch.autograd.grad(loss_for_grad, self.ori_model.adj, retain_graph=True)[0].to_dense()
+                    edge_gradient = torch.autograd.grad(loss_for_grad, self.ori_model.adj, retain_graph=True)[0]
                     toc = time.time()
                     print("GCL_for_gradient AUTOGRAD computing time:", toc - tic)
                 else:
                     edge_gradient = self.integrated_gradient.get_integrated_gradient(adj_for_loss_gradient,
                                                                                      self.ori_model, self.ori_adj,
                                                                                      batch_users, batch_items,
-                                                                                     mask_1, mask_2).to_dense()
+                                                                                     mask_1, mask_2)
                 del adj_for_loss_gradient
                 gc.collect()
                 tic = time.time()
@@ -459,8 +459,8 @@ class GROC_loss(nn.Module):
                 del adj_with_insert
                 tic = time.time()
                 groc_loss = ori_gcl_computing(self.ori_adj, self.ori_model,
-                                              utils.normalize_adj_tensor(adj_insert_remove_1, sparse=True),
-                                              utils.normalize_adj_tensor(adj_insert_remove_2, sparse=True),
+                                              utils.normalize_adj_tensor(adj_insert_remove_1).to_sparse().to(self.device),
+                                              utils.normalize_adj_tensor(adj_insert_remove_2).to_sparse().to(self.device),
                                               batch_users, batch_pos, self.args, self.device, mask_1, mask_2)
                 toc = time.time()
                 print("GCL computing time:", toc - tic)
