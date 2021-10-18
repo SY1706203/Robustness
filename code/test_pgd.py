@@ -214,7 +214,7 @@ if args.train_groc:
         Graph2 = __dropout_x(Graph, 0.8).to(device)
 
         print("Mode:GCL + BPR")
-        groc = GROC_loss(Recmodel, adj, args)
+        groc = GROC_loss(Recmodel, adj, d_mtr, args)
         groc.ori_gcl_train_with_bpr(Graph1, Graph2, data_len, users, posItems, negItems)
 
         print("original model performance on original adjacency matrix:")

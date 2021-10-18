@@ -1,4 +1,5 @@
 from datetime import datetime
+import time
 import gc
 import torch
 import torch.nn as nn
@@ -178,6 +179,59 @@ class GROC_loss(nn.Module):
 
         return modified_adj_a, modified_adj_b
 
+    def ori_gcl_computing(self, trn_model, gra1, gra2, users, poss, mask_1=None, mask_2=None, query_groc=None):
+        (user_emb, _, _, _) = trn_model.getEmbedding(self.ori_adj, users.long(), poss.long())
+
+        (users_emb_perturb_1, _, _, _) = trn_model.getEmbedding(gra1, users.long(), poss.long(), query_groc=query_groc)
+        if mask_1 is not None:
+            users_emb_perturb_1 = nn.functional.normalize(users_emb_perturb_1, dim=1).masked_fill_(mask_1, 0.)
+        else:
+            users_emb_perturb_1 = nn.functional.normalize(users_emb_perturb_1, dim=1)
+        (users_emb_perturb_2, _, _, _) = trn_model.getEmbedding(gra2, users.long(), poss.long(), query_groc=query_groc)
+        if mask_2 is not None:
+            users_emb_perturb_2 = nn.functional.normalize(users_emb_perturb_2, dim=1).masked_fill_(mask_2, 0.)
+        else:
+            users_emb_perturb_2 = nn.functional.normalize(users_emb_perturb_2, dim=1)
+        users_dot_12 = torch.bmm(users_emb_perturb_1.unsqueeze(1), users_emb_perturb_2.unsqueeze(2)).squeeze(2)
+        users_dot_12 /= self.args.T_groc
+        fenzi_12 = torch.exp(users_dot_12).sum(1)
+
+        neg_emb_users_12 = users_emb_perturb_2.unsqueeze(0).repeat(user_emb.size(0), 1, 1)
+        neg_dot_12 = torch.bmm(neg_emb_users_12, users_emb_perturb_1.unsqueeze(2)).squeeze(2)
+        neg_dot_12 /= self.args.T_groc
+        neg_dot_12 = torch.exp(neg_dot_12).sum(1)
+
+        mask_11 = self.get_negative_mask_perturb(users_emb_perturb_1.size(0)).to(self.device)
+        neg_dot_11 = torch.exp(torch.mm(users_emb_perturb_1, users_emb_perturb_1.t()) / self.args.T_groc)
+        neg_dot_11 = neg_dot_11.masked_select(mask_11).view(users_emb_perturb_1.size(0), -1).sum(1)
+        loss_perturb_11 = (-torch.log(fenzi_12 / (neg_dot_11 + neg_dot_12))).mean()
+
+        users_dot_21 = torch.bmm(users_emb_perturb_2.unsqueeze(1), users_emb_perturb_1.unsqueeze(2)).squeeze(2)
+        users_dot_21 /= self.args.T_groc
+        fenzi_21 = torch.exp(users_dot_21).sum(1)
+
+        neg_emb_users_21 = users_emb_perturb_1.unsqueeze(0).repeat(user_emb.size(0), 1, 1)
+        neg_dot_21 = torch.bmm(neg_emb_users_21, users_emb_perturb_2.unsqueeze(2)).squeeze(2)
+        neg_dot_21 /= self.args.T_groc
+        neg_dot_21 = torch.exp(neg_dot_21).sum(1)
+
+        mask_22 = self.get_negative_mask_perturb(users_emb_perturb_2.size(0)).to(self.device)
+        neg_dot_22 = torch.exp(torch.mm(users_emb_perturb_2, users_emb_perturb_2.t()) / self.args.T_groc)
+        neg_dot_22 = neg_dot_22.masked_select(mask_22).view(users_emb_perturb_2.size(0), -1).sum(1)
+        loss_perturb_22 = (-torch.log(fenzi_21 / (neg_dot_22 + neg_dot_21))).mean()
+
+        loss_perturb = loss_perturb_11 + loss_perturb_22
+
+        return loss_perturb
+
+    @staticmethod
+    def get_negative_mask_perturb(batch_size):
+        negative_mask = torch.ones((batch_size, batch_size), dtype=bool)
+        for i in range(batch_size):
+            negative_mask[i, i] = 0
+
+        return negative_mask
+
     def groc_train(self):
         self.ori_model.train()
         embedding_param = []
@@ -341,27 +395,18 @@ class GROC_loss(nn.Module):
             aver_groc_loss = 0.
             for (batch_i, (batch_users, batch_pos, batch_neg)) \
                     in enumerate(utils.minibatch(users, posItems, negItems, batch_size=self.args.batch_size)):
+                print("current batch:", batch_i)
 
                 batch_items = utils.shuffle(torch.cat((batch_pos, batch_neg))).to(self.device)
 
                 batch_users_unique = batch_users.unique()  # only select 10 anchor nodes for adj_edge insertion
-                now = datetime.now()
-                current_time = now.strftime("%H:%M:%S")
-                print("Current Time after batch construction=", current_time)
-                print("=======================")
+
                 adj_with_insert = self.get_modified_adj_for_insert(batch_users_unique, adj_with_2_hops)  # 2 views are same
-                now = datetime.now()
-                current_time = now.strftime("%H:%M:%S")
-                print("Current Time after construction of adj with insertion=", current_time)
-                print("=======================")
+
                 mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1) \
                     .to(self.device)
                 mask_2 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_2) \
                     .to(self.device)
-                now = datetime.now()
-                current_time = now.strftime("%H:%M:%S")
-                print("Current Time after 2 masks construction=", current_time)
-                print("=======================")
 
                 # batch_users_groc = batch_all_node[batch_all_node < self.num_users]
                 # batch_items = batch_all_node[batch_all_node >= self.num_users] - self.num_users
@@ -369,21 +414,19 @@ class GROC_loss(nn.Module):
                 adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert, sparse=True)
 
                 if self.args.normal_gradients:
+                    tic = time.time()
                     loss_for_grad = ori_gcl_computing(self.ori_adj, self.ori_model, adj_for_loss_gradient,
                                                       adj_for_loss_gradient, batch_users, batch_pos, self.args,
                                                       self.device, mask_1, mask_2, query_groc=True)
-                    now = datetime.now()
-                    current_time = now.strftime("%H:%M:%S")
-                    print("Current Time after gcl calculation=", current_time)
-                    print("=======================")
+
+                    toc = time.time()
+                    print("GCL_for_gradient computing time:", toc-tic)
 
                     # remove index of diagonal
-
+                    tic = time.time()
                     edge_gradient = torch.autograd.grad(loss_for_grad, self.ori_model.adj, retain_graph=True)[0].to_dense()
-                    now = datetime.now()
-                    current_time = now.strftime("%H:%M:%S")
-                    print("Current Time after edge_gradient calculation=", current_time)
-                    print("=======================")
+                    toc = time.time()
+                    print("GCL_for_gradient AUTOGRAD computing time:", toc - tic)
                 else:
                     edge_gradient = self.integrated_gradient.get_integrated_gradient(adj_for_loss_gradient,
                                                                                      self.ori_model, self.ori_adj,
@@ -391,7 +434,7 @@ class GROC_loss(nn.Module):
                                                                                      mask_1, mask_2).to_dense()
                 del adj_for_loss_gradient
                 gc.collect()
-
+                tic = time.time()
                 adj_insert_remove_1 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_1,
                                                                                                self.args.remove_prob_1,
                                                                                                batch_users_unique,
@@ -399,10 +442,9 @@ class GROC_loss(nn.Module):
                                                                                                adj_with_insert,
                                                                                                tril_adj_index_0,
                                                                                                tril_adj_index_1)
-                now = datetime.now()
-                current_time = now.strftime("%H:%M:%S")
-                print("Current Time after adj_insert_remove_1 construction=", current_time)
-                print("=======================")
+                toc = time.time()
+                print("adj_insert_remove adj construction time:", toc - tic)
+
                 adj_insert_remove_2 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_2,
                                                                                                self.args.remove_prob_2,
                                                                                                batch_users_unique,
@@ -411,22 +453,16 @@ class GROC_loss(nn.Module):
                                                                                                tril_adj_index_0,
                                                                                                tril_adj_index_1)
 
-                now = datetime.now()
-                current_time = now.strftime("%H:%M:%S")
-                print("Current Time after adj_insert_remove_2 construction=", current_time)
-                print("=======================")
-
                 del adj_with_insert
-
+                tic = time.time()
                 groc_loss = ori_gcl_computing(self.ori_adj, self.ori_model,
                                               utils.normalize_adj_tensor(adj_insert_remove_1, sparse=True),
                                               utils.normalize_adj_tensor(adj_insert_remove_2, sparse=True),
                                               batch_users, batch_pos, self.args, self.device, mask_1, mask_2)
-
-                now = datetime.now()
-                current_time = now.strftime("%H:%M:%S")
-                print("Current Time after gcl calculation=", current_time)
-                print("=======================")
+                toc = time.time()
+                print("GCL computing time:", toc - tic)
+                print("Batch print info ended here")
+                print("=============================================================")
 
                 del adj_insert_remove_1
                 del adj_insert_remove_2
@@ -434,18 +470,8 @@ class GROC_loss(nn.Module):
                 bpr_loss, reg_loss = self.ori_model.bpr_loss(ori_adj_sparse, batch_users, batch_pos, batch_neg)
                 reg_loss = reg_loss * self.ori_model.weight_decay
 
-                now = datetime.now()
-                current_time = now.strftime("%H:%M:%S")
-                print("Current Time after bpr calculation=", current_time)
-                print("=======================")
-
                 loss = self.args.loss_weight_bpr * bpr_loss + reg_loss + (1 - self.args.loss_weight_bpr) * groc_loss
                 loss.backward()
-
-                now = datetime.now()
-                current_time = now.strftime("%H:%M:%S")
-                print("Current Time after groc backwards=", current_time)
-                print("=======================")
 
                 optimizer.step()
 
@@ -511,9 +537,11 @@ class GROC_loss(nn.Module):
             aver_groc_loss = 0.
             for (batch_i, (batch_users, batch_pos, batch_neg)) \
                     in enumerate(utils.minibatch(users, posItems, negItems, batch_size=self.args.batch_size)):
+                tic = time.time()
+                gcl = self.ori_gcl_computing(self.ori_model, gra1, gra2, batch_users, batch_pos)
+                toc = time.time()
 
-                gcl = ori_gcl_computing(self.ori_adj, self.ori_model, gra1, gra2, batch_users, batch_pos, self.args,
-                                        self.device)
+                print("time for gcl calculation:", toc-tic)
 
                 bpr_loss, reg_loss = self.ori_model.bpr_loss(self.ori_adj, batch_users, batch_pos, batch_neg)
                 reg_loss = reg_loss * self.ori_model.weight_decay
