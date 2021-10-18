@@ -70,15 +70,28 @@ def normalize_feature(mx):
     return mx
 
 
-def normalize_adj_tensor(adj, sparse=False):
+def normalize_adj_tensor(adj, m_d=None, sparse=False):
     device = torch.device("cuda" if adj.is_cuda else "cpu")
     if sparse:
+
+        index = torch.arange(0, adj.size()[0])
+        i = torch.stack((index, index))
+        v = torch.ones(i.shape[1]).to(device)
+        e = torch.sparse_coo_tensor(i, v, adj.size()).to(device)
+
+        mx = adj + e
+
+        mx = torch.sparse.mm(m_d, mx)
+        mx = torch.sparse.mm(mx, m_d)
+
+        return mx
         # TODO if this is too slow, uncomment the following code,
         # but you need to install torch_scatter
         # return normalize_sparse_tensor(adj)
-        adj = to_scipy(adj)
-        mx = normalize_adj(adj)
-        return sparse_mx_to_torch_sparse_tensor(mx).to(device)
+        # adj = to_scipy(adj)
+        # mx = normalize_adj(adj)
+        # return sparse_mx_to_torch_sparse_tensor(mx).to(device)
+
     else:
         mx = adj + torch.eye(adj.shape[0]).to(device)
         rowsum = mx.sum(1)
@@ -339,7 +352,6 @@ def scheduler_groc(optimizer, data_len, warmup_steps, n_batch, n_epochs):
         optimizer, num_warmup_steps=warmup_steps, num_training_steps=num_training_steps
     )
     return scheduler_
-
 
 # ====================end Metrics=============================
 # =========================================================

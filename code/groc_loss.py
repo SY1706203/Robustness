@@ -414,7 +414,7 @@ class GROC_loss(nn.Module):
                 # batch_users_groc = batch_all_node[batch_all_node < self.num_users]
                 # batch_items = batch_all_node[batch_all_node >= self.num_users] - self.num_users
                 tic = time.time()
-                adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert).to_sparse().to(self.device)
+                adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert.to_sparse(), self.d_mtr, sparse=True)
                 toc = time.time()
                 print("time to normalize adj_with_insert: {} s".format(toc-tic))
                 if self.args.normal_gradients:
@@ -459,8 +459,8 @@ class GROC_loss(nn.Module):
 
                 del adj_with_insert
                 tic_toal = time.time()
-                adj_norm_1 = utils.normalize_adj_tensor(adj_insert_remove_1)
-                adj_norm_2 = utils.normalize_adj_tensor(adj_insert_remove_2)
+                adj_norm_1 = utils.normalize_adj_tensor(adj_insert_remove_1.to_sparse(), self.d_mtr, sparse=True)
+                adj_norm_2 = utils.normalize_adj_tensor(adj_insert_remove_2.to_sparse(), self.d_mtr, sparse=True)
                 toc = time.time()
                 print("time to calculate 2 normalizations: {} s".format(toc - tic_toal))
                 tic = time.time()
