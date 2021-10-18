@@ -90,7 +90,7 @@ class GROC_loss(nn.Module):
         where_to_insert = (torch.sparse.mm(batch_nodes_in_matrix, adj_with_2_hops) -
                            torch.sparse.mm(batch_nodes_in_matrix, self.ori_adj)).to(self.device)
 
-        num_insert = where_to_insert.sum() // 10
+        num_insert = where_to_insert.sum()
 
         where_to_insert = where_to_insert + where_to_insert.T
 
