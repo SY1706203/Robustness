@@ -443,8 +443,8 @@ class GROC_loss(nn.Module):
 
                 del adj_with_insert
                 groc_loss = ori_gcl_computing(self.ori_adj, self.ori_model,
-                                              utils.normalize_adj_tensor(adj_insert_remove_1).to_sparse().to(self.device),
-                                              utils.normalize_adj_tensor(adj_insert_remove_2).to_sparse().to(self.device),
+                                              utils.normalize_adj_tensor(adj_insert_remove_1),
+                                              utils.normalize_adj_tensor(adj_insert_remove_2),
                                               batch_users, batch_pos, self.args, self.device, mask_1, mask_2)
 
                 del adj_insert_remove_1
