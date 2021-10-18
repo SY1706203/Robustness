@@ -92,7 +92,7 @@ data_len = len(users)
 
 Recmodel = lightgcn.LightGCN(device)
 Recmodel = Recmodel.to(device)
-Recmodel.fit(adj, users, posItems, negItems)
+#Recmodel.fit(adj, users, posItems, negItems)
 
 num_users = Recmodel.num_users
 
