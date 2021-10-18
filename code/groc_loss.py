@@ -459,8 +459,8 @@ class GROC_loss(nn.Module):
 
                 del adj_with_insert
                 tic_toal = time.time()
-                adj_norm_1 = utils.normalize_adj_tensor(adj_insert_remove_1).to_sparse().to(self.device)
-                adj_norm_2 = utils.normalize_adj_tensor(adj_insert_remove_2).to_sparse().to(self.device)
+                adj_norm_1 = utils.normalize_adj_tensor(adj_insert_remove_1)
+                adj_norm_2 = utils.normalize_adj_tensor(adj_insert_remove_2)
                 toc = time.time()
                 print("time to calculate 2 normalizations: {} s".format(toc - tic_toal))
                 tic = time.time()
