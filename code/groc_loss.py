@@ -410,8 +410,11 @@ class GROC_loss(nn.Module):
 
                 # batch_users_groc = batch_all_node[batch_all_node < self.num_users]
                 # batch_items = batch_all_node[batch_all_node >= self.num_users] - self.num_users
-
+                tic = time.time()
                 adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert, sparse=True)
+                toc = time.time()
+
+                print("Normalize adj time consumption:", toc-tic)
 
                 if self.args.normal_gradients:
                     tic = time.time()
