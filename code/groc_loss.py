@@ -414,15 +414,14 @@ class GROC_loss(nn.Module):
                 # batch_users_groc = batch_all_node[batch_all_node < self.num_users]
                 # batch_items = batch_all_node[batch_all_node >= self.num_users] - self.num_users
                 tic = time.time()
-                adj_for_loss_gradient = utils.normalize_adj_tensor(
-                    adj_with_insert.to_sparse(), self.d_mtr, sparse=True).to_dense()
+                adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert.to_sparse(), self.d_mtr, sparse=True)
                 toc = time.time()
                 print("time to normalize adj_with_insert: {} s".format(toc-tic))
                 if self.args.normal_gradients:
                     tic = time.time()
                     loss_for_grad = ori_gcl_computing(self.ori_adj, self.ori_model, adj_for_loss_gradient,
                                                       adj_for_loss_gradient, batch_users, batch_pos, self.args,
-                                                      self.device, mask_1, mask_2, query_groc=True)
+                                                      self.device, True, mask_1, mask_2, query_groc=True)
                     toc = time.time()
                     print("time to calculate GCL: {} s".format(toc - tic))
 
@@ -466,7 +465,7 @@ class GROC_loss(nn.Module):
                 print("time to calculate 2 normalizations: {} s".format(toc - tic_toal))
                 tic = time.time()
                 groc_loss = ori_gcl_computing(self.ori_adj, self.ori_model, adj_norm_1, adj_norm_2, batch_users,
-                                              batch_pos, self.args, self.device, mask_1, mask_2)
+                                              batch_pos, self.args, self.device, mask_1=mask_1, mask_2=mask_1)
                 toc = time.time()
                 print("time to calculate 2nd GCL: {} s".format(toc - tic))
                 print("time to calculate 2nd GCL including calculation of normalization: {} s".format(toc - tic_toal))

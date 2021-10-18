@@ -3,19 +3,25 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-def ori_gcl_computing(ori_adj, trn_model, gra1, gra2, users, poss, args, device, mask_1=None, mask_2=None, query_groc=None):
+def ori_gcl_computing(ori_adj, trn_model, gra1, gra2, users, poss, args, device, flag=False, mask_1=None, mask_2=None,
+                      query_groc=None):
     (_, pos_emb, _, _) = trn_model.getEmbedding(ori_adj, users.long(), poss.long())
-
-    (users_emb_perturb_1, _, _, _) = trn_model.getEmbedding(gra1, users.long(), poss.long(), query_groc=query_groc)
-    if mask_1 is not None:
-        users_emb_perturb_1 = nn.functional.normalize(users_emb_perturb_1, dim=1).masked_fill_(mask_1, 0.)
+    if flag:
+        (users_emb_perturb, _, _, _) = trn_model.getEmbedding(gra1, users.long(), poss.long(), query_groc=query_groc)
+        if mask_1 is not None and mask_2 is not None:
+            users_emb_perturb_1 = nn.functional.normalize(users_emb_perturb, dim=1).masked_fill_(mask_1, 0.)
+            users_emb_perturb_2 = nn.functional.normalize(users_emb_perturb, dim=1).masked_fill_(mask_2, 0.)
     else:
-        users_emb_perturb_1 = nn.functional.normalize(users_emb_perturb_1, dim=1)
-    (users_emb_perturb_2, _, _, _) = trn_model.getEmbedding(gra2, users.long(), poss.long(), query_groc=query_groc)
-    if mask_2 is not None:
-        users_emb_perturb_2 = nn.functional.normalize(users_emb_perturb_2, dim=1).masked_fill_(mask_2, 0.)
-    else:
-        users_emb_perturb_2 = nn.functional.normalize(users_emb_perturb_2, dim=1)
+        (users_emb_perturb_1, _, _, _) = trn_model.getEmbedding(gra1, users.long(), poss.long(), query_groc=query_groc)
+        if mask_1 is not None:
+            users_emb_perturb_1 = nn.functional.normalize(users_emb_perturb_1, dim=1).masked_fill_(mask_1, 0.)
+        else:
+            users_emb_perturb_1 = nn.functional.normalize(users_emb_perturb_1, dim=1)
+        (users_emb_perturb_2, _, _, _) = trn_model.getEmbedding(gra2, users.long(), poss.long(), query_groc=query_groc)
+        if mask_2 is not None:
+            users_emb_perturb_2 = nn.functional.normalize(users_emb_perturb_2, dim=1).masked_fill_(mask_2, 0.)
+        else:
+            users_emb_perturb_2 = nn.functional.normalize(users_emb_perturb_2, dim=1)
     users_dot_12 = torch.bmm(users_emb_perturb_1.unsqueeze(1), users_emb_perturb_2.unsqueeze(2)).squeeze(2)
     users_dot_12 /= args.T_groc
     fenzi_12 = torch.exp(users_dot_12).sum(1)
