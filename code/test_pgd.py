@@ -30,6 +30,7 @@ parser.add_argument('--groc_embed_mask',                type=bool,  default=Fals
 parser.add_argument('--gcl_with_bpr',                   type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
 parser.add_argument('--use_scheduler',                  type=bool,  default=False,                                                                                                                                               help='Use scheduler for learning rate decay')
 parser.add_argument('--normal_gradients',               type=bool,  default=True,                                                                                                                                                help='Use scheduler for learning rate decay')
+parser.add_argument('--groc_with_bpr_cat',              type=bool,  default=False,                                                                                                                                                help='Use scheduler for learning rate decay')
 parser.add_argument('--loss_weight_bpr',                type=float, default=0.9,                                                                                                                                                 help='train loss with learnable weight between 2 losses')
 parser.add_argument('--dataset',                        type=str,   default='citeseer',                                                                                                             choices=['MOOC'],            help='dataset')
 parser.add_argument('--T_groc',                         type=float, default=0.7,                                                                                                                                                 help='param temperature for GROC')
@@ -232,6 +233,26 @@ if args.train_groc:
         torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) + '/data/LightGCN_after_GCL_BPR.pt')
         print("===========================")
 
+    if args.groc_with_bpr_cat:
+        print("Mode:GROC + BPR CAT")
+        groc = GROC_loss(Recmodel, adj, d_mtr, args)
+        groc.groc_train_with_bpr(data_len, users, posItems, negItems)
+
+        print("save model")
+        torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) +
+                   '/data/LightGCN_after_GROC_{}.pt'.format(args.loss_weight_bpr))
+        print("===========================")
+
+        print("original model performance on original adjacency matrix:")
+        print("===========================")
+        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
+        print("===========================")
+
+        print("ori model performance after GROC learning on modified adjacency matrix A:")
+        print("===========================")
+        modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
+                                      args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_a), None, 0)
     print("=================================================")
     print("=================================================")
 

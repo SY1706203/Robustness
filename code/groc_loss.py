@@ -452,6 +452,9 @@ class GROC_loss(nn.Module):
 
                 del adj_insert_remove_1
                 del adj_insert_remove_2
+                del adj_norm_1
+                del adj_norm_2
+
                 bpr_loss, reg_loss = self.ori_model.bpr_loss(ori_adj_sparse, batch_users, batch_pos, batch_neg)
                 reg_loss = reg_loss * self.ori_model.weight_decay
 
@@ -551,6 +554,147 @@ class GROC_loss(nn.Module):
             print("GROC Loss: ", aver_loss)
             print("BPR Loss: ", aver_bpr_loss)
             print("DCL Loss: ", aver_dcl_loss)
+
+    def groc_train_with_bpr_cat(self, data_len_, users, posItems, negItems):
+        self.ori_model.train()
+        embedding_param = []
+        adj_param = []
+        for n, p in self.ori_model.named_parameters():
+            if n.__contains__('embedding'):
+                embedding_param.append(p)
+            else:
+                adj_param.append(p)
+        optimizer = optim.Adam([
+            {'params': embedding_param},
+            {'params': adj_param, 'lr': 0}
+        ], lr=self.ori_model.lr, weight_decay=self.ori_model.weight_decay)
+
+        if self.args.use_scheduler:
+            scheduler = scheduler_groc(optimizer, data_len_, self.args.warmup_steps, self.args.groc_batch_size,
+                                       self.args.groc_epochs)
+
+        total_batch = len(users) // self.args.batch_size + 1
+        ori_adj_sparse = utils.normalize_adj_tensor(self.ori_adj).to_sparse().to(self.device)  # for bpr loss
+
+        adj_with_2_hops = self.contruct_adj_after_n_hops()  # dense
+
+        tril_adj_index = torch.tril_indices(row=len(self.ori_adj) - 1, col=len(self.ori_adj) - 1, offset=0)
+        tril_adj_index = tril_adj_index.to(self.device)
+        tril_adj_index_0 = tril_adj_index[0]
+        tril_adj_index_1 = tril_adj_index[1]
+
+        for i in range(self.args.groc_epochs):
+            optimizer.zero_grad()
+
+            users = users.to(self.device)
+            posItems = posItems.to(self.device)
+            negItems = negItems.to(self.device)
+            users, posItems, negItems = utils.shuffle(users, posItems, negItems)
+
+            aver_loss = 0.
+            aver_bpr_loss = 0.
+            aver_groc_loss = 0.
+            for (batch_i, (batch_users, batch_pos, batch_neg)) \
+                    in enumerate(utils.minibatch(users, posItems, negItems, batch_size=self.args.batch_size)):
+                batch_items = utils.shuffle(torch.cat((batch_pos, batch_neg))).to(self.device)
+
+                batch_users_unique = batch_users.unique()  # only select 10 anchor nodes for adj_edge insertion
+
+                adj_with_insert = self.get_modified_adj_for_insert(batch_users_unique,
+                                                                   adj_with_2_hops)  # 2 views are same
+
+                mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1) \
+                    .to(self.device)
+                mask_2 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_2) \
+                    .to(self.device)
+
+                # batch_users_groc = batch_all_node[batch_all_node < self.num_users]
+                # batch_items = batch_all_node[batch_all_node >= self.num_users] - self.num_users
+
+                adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert.to_sparse(), self.d_mtr,
+                                                                   sparse=True)
+
+                if self.args.normal_gradients:
+                    gcl_grad = ori_gcl_computing(self.ori_adj, self.ori_model, adj_for_loss_gradient,
+                                                 adj_for_loss_gradient, batch_users, batch_pos, self.args, self.device,
+                                                 True, mask_1, mask_2, query_groc=True)
+                    bpr_loss_grad, reg_loss_grad = self.ori_model.bpr_loss(ori_adj_sparse, batch_users, batch_pos,
+                                                                           batch_neg)
+                    reg_loss_grad = reg_loss_grad * self.ori_model.weight_decay
+
+                    loss_for_grad = self.args.loss_weight_bpr * bpr_loss_grad + reg_loss_grad + \
+                                    (1 - self.args.loss_weight_bpr) * gcl_grad
+
+                    edge_gradient = torch.autograd.grad(loss_for_grad, self.ori_model.adj, retain_graph=True)[0]
+
+                else:
+                    edge_gradient = self.integrated_gradient.get_integrated_gradient(adj_for_loss_gradient,
+                                                                                     self.ori_model, self.ori_adj,
+                                                                                     batch_users, batch_items,
+                                                                                     mask_1, mask_2)
+                del adj_for_loss_gradient
+                gc.collect()
+
+                adj_insert_remove_1 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_1,
+                                                                                               self.args.remove_prob_1,
+                                                                                               batch_users_unique,
+                                                                                               edge_gradient,
+                                                                                               adj_with_insert,
+                                                                                               tril_adj_index_0,
+                                                                                               tril_adj_index_1)
+
+                adj_insert_remove_2 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_2,
+                                                                                               self.args.remove_prob_2,
+                                                                                               batch_users_unique,
+                                                                                               edge_gradient,
+                                                                                               adj_with_insert,
+                                                                                               tril_adj_index_0,
+                                                                                               tril_adj_index_1)
+
+                del adj_with_insert
+
+                adj_norm_1 = utils.normalize_adj_tensor(adj_insert_remove_1.to_sparse(), self.d_mtr, sparse=True)
+                adj_norm_2 = utils.normalize_adj_tensor(adj_insert_remove_2.to_sparse(), self.d_mtr, sparse=True)
+
+                groc_loss = ori_gcl_computing(self.ori_adj, self.ori_model, adj_norm_1, adj_norm_2, batch_users,
+                                              batch_pos, self.args, self.device, mask_1=mask_1, mask_2=mask_1)
+
+                del adj_insert_remove_1
+                del adj_insert_remove_2
+                del adj_norm_1
+                del adj_norm_2
+
+                bpr_loss, reg_loss = self.ori_model.bpr_loss(ori_adj_sparse, batch_users, batch_pos, batch_neg)
+                reg_loss = reg_loss * self.ori_model.weight_decay
+
+                loss = self.args.loss_weight_bpr * bpr_loss + reg_loss + (1 - self.args.loss_weight_bpr) * groc_loss
+
+                loss.backward()
+
+                optimizer.step()
+
+                if self.args.use_scheduler:
+                    scheduler.step()
+
+                aver_loss += loss.cpu().item()
+                aver_bpr_loss += bpr_loss.cpu().item()
+                aver_groc_loss += groc_loss.cpu().item()
+
+            aver_loss = aver_loss / total_batch
+            aver_bpr_loss = aver_bpr_loss / total_batch
+            aver_dcl_loss = aver_groc_loss / total_batch
+
+            now = datetime.now()
+
+            current_time = now.strftime("%H:%M:%S")
+            print("Current Time =", current_time)
+            print("=======================")
+
+            print("Epoch: {}:".format(i))
+            print("GROC Loss: ", aver_loss)
+            print("BPR Loss: ", aver_bpr_loss)
+            print("DCL Loss: ", aver_dcl_loss)
+            print("=========================")
 
     def fit(self):
         pass
