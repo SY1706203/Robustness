@@ -448,7 +448,7 @@ class GROC_loss(nn.Module):
                 adj_norm_2 = utils.normalize_adj_tensor(adj_insert_remove_2.to_sparse(), self.d_mtr, sparse=True)
 
                 groc_loss = ori_gcl_computing(self.ori_adj, self.ori_model, adj_norm_1, adj_norm_2, batch_users,
-                                              batch_pos, self.args, self.device, mask_1=mask_1, mask_2=mask_1)
+                                              batch_pos, self.args, self.device, mask_1=mask_1, mask_2=mask_2)
 
                 del adj_insert_remove_1
                 del adj_insert_remove_2
@@ -657,7 +657,7 @@ class GROC_loss(nn.Module):
                 adj_norm_2 = utils.normalize_adj_tensor(adj_insert_remove_2.to_sparse(), self.d_mtr, sparse=True)
 
                 groc_loss = ori_gcl_computing(self.ori_adj, self.ori_model, adj_norm_1, adj_norm_2, batch_users,
-                                              batch_pos, self.args, self.device, mask_1=mask_1, mask_2=mask_1)
+                                              batch_pos, self.args, self.device, mask_1=mask_1, mask_2=mask_2)
 
                 del adj_insert_remove_1
                 del adj_insert_remove_2
