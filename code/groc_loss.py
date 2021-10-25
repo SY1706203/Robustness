@@ -403,7 +403,7 @@ class GROC_loss(nn.Module):
                     .to(self.device)
                 mask_2 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_2) \
                     .to(self.device)
-                if self.args.use_groc_framework:
+                if not self.args.use_groc_pgd:
                     adj_with_insert = self.get_modified_adj_for_insert(batch_users_unique, adj_with_2_hops)  # 2 views are same
 
                     # batch_users_groc = batch_all_node[batch_all_node < self.num_users]
