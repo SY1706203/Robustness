@@ -4,6 +4,7 @@ import argparse
 import os
 import lightgcn
 from register import dataset
+from topology_attack import PGDAttack
 import utils
 from utils_attack import attack_model, attack_randomly, attack_embedding
 import Procedure
@@ -178,8 +179,9 @@ if args.train_groc:
 
     if args.groc_with_bpr:
         print("Mode:GROC + BPR")
-        groc = GROC_loss(Recmodel, adj, d_mtr, args)
-        groc.groc_train_with_bpr(data_len, users, posItems, negItems)
+        pgd_model = PGDAttack(model=Recmodel, nnodes=adj.size(1), device=device)
+        groc = GROC_loss(Recmodel, adj, d_mtr, args, pgd_model)
+        groc.groc_train_with_bpr(data_len, users, posItems, negItems, perturbations)
 
         print("save model")
         torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) +
@@ -237,7 +239,7 @@ if args.train_groc:
     if args.groc_with_bpr_cat:
         print("Mode:GROC + BPR CAT")
         groc = GROC_loss(Recmodel, adj, d_mtr, args)
-        groc.groc_train_with_bpr(data_len, users, posItems, negItems)
+        groc.groc_train_with_bpr_cat(data_len, users, posItems, negItems)
 
         print("save model")
         torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) +

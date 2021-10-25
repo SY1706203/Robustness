@@ -355,7 +355,7 @@ class GROC_loss(nn.Module):
                 print("BPR Loss: ", aver_bpr_loss)
                 print("DCL Loss: ", aver_dcl_loss)
 
-    def groc_train_with_bpr(self, data_len_, users, posItems, negItems):
+    def groc_train_with_bpr(self, data_len_, users, posItems, negItems, perturbations):
         self.ori_model.train()
         embedding_param = []
         adj_param = []
@@ -396,21 +396,21 @@ class GROC_loss(nn.Module):
             aver_groc_loss = 0.
             for (batch_i, (batch_users, batch_pos, batch_neg)) \
                     in enumerate(utils.minibatch(users, posItems, negItems, batch_size=self.args.batch_size)):
-                batch_items = utils.shuffle(torch.cat((batch_pos, batch_neg))).to(self.device)
+                # batch_items = utils.shuffle(torch.cat((batch_pos, batch_neg))).to(self.device)
 
                 batch_users_unique = batch_users.unique()  # only select 10 anchor nodes for adj_edge insertion
+                mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1) \
+                    .to(self.device)
+                mask_2 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_2) \
+                    .to(self.device)
                 if self.args.use_groc_framework:
                     adj_with_insert = self.get_modified_adj_for_insert(batch_users_unique, adj_with_2_hops)  # 2 views are same
-
-                    mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1) \
-                        .to(self.device)
-                    mask_2 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_2) \
-                        .to(self.device)
 
                     # batch_users_groc = batch_all_node[batch_all_node < self.num_users]
                     # batch_items = batch_all_node[batch_all_node >= self.num_users] - self.num_users
 
-                    adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert.to_sparse(), self.d_mtr, sparse=True)
+                    adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert.to_sparse(), self.d_mtr,
+                                                                       sparse=True)
 
                     if not self.args.use_IntegratedGradient:
                         loss_for_grad = ori_gcl_computing(self.ori_adj, self.ori_model, adj_for_loss_gradient,
@@ -448,11 +448,23 @@ class GROC_loss(nn.Module):
                     adj_norm_1 = utils.normalize_adj_tensor(adj_insert_remove_1.to_sparse(), self.d_mtr, sparse=True)
                     adj_norm_2 = utils.normalize_adj_tensor(adj_insert_remove_2.to_sparse(), self.d_mtr, sparse=True)
 
+                    del adj_insert_remove_1
+                    del adj_insert_remove_2
+
+                else:
+                    adj_pgd_1 = self.pgd_model.attack_per_batch(self.ori_adj, perturbations, batch_users,
+                                                                batch_pos, batch_neg, self.num_users)
+                    adj_pgd_2 = self.pgd_model.attack_per_batch(self.ori_adj, perturbations, batch_users,
+                                                                batch_pos, batch_neg, self.num_users)
+
+                    adj_norm_1 = utils.normalize_adj_tensor(adj_pgd_1.to_sparse(), self.d_mtr, sparse=True)
+                    adj_norm_2 = utils.normalize_adj_tensor(adj_pgd_2.to_sparse(), self.d_mtr, sparse=True)
+
+                    gc.collect()
+
                 groc_loss = ori_gcl_computing(self.ori_adj, self.ori_model, adj_norm_1, adj_norm_2, batch_users,
                                               batch_pos, self.args, self.device, mask_1=mask_1, mask_2=mask_2)
 
-                del adj_insert_remove_1
-                del adj_insert_remove_2
                 del adj_norm_1
                 del adj_norm_2
 
@@ -612,8 +624,7 @@ class GROC_loss(nn.Module):
                 # batch_users_groc = batch_all_node[batch_all_node < self.num_users]
                 # batch_items = batch_all_node[batch_all_node >= self.num_users] - self.num_users
 
-                adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert.to_sparse(), self.d_mtr,
-                                                                   sparse=True)
+                adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert.to_sparse(), self.d_mtr, sparse=True)
 
                 if self.args.normal_gradients:
                     gcl_grad = ori_gcl_computing(self.ori_adj, self.ori_model, adj_for_loss_gradient,

@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 from tqdm import tqdm
-import scipy.sparse as sp
 from torch.nn.parameter import Parameter
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,17 +8,14 @@ from torch import optim
 from base_attack import BaseAttack
 import utils
 
-from register import dataset
-import world
-
 
 class PGDAttack(BaseAttack):
     def __init__(self, model=None, nnodes=None, loss_type='CE', feature_shape=None, attack_structure=True,
-                 attack_features=False, device='cuda:0'):
+                 attack_features=False, device=None):
         super(PGDAttack, self).__init__(model, nnodes, attack_structure, attack_features, device)
 
         assert attack_features or attack_structure, 'attack_features or attack_structure cannot be both False'
-
+        self.surrogate._is_sparse = False
         self.loss_type = loss_type
         self.modified_adj = None
         self.modified_features = None
@@ -80,6 +76,32 @@ class PGDAttack(BaseAttack):
 
         torch.save(self.modified_adj, path.format(ids[flag]))
 
+    def attack_per_batch(self, ori_adj, perturbations, batch_users, batch_pos, batch_neg, num_users):
+
+        victim_model = self.surrogate
+        victim_model.eval()
+
+        modified_adj = self.get_modified_adj(ori_adj, num_users)
+        adj_norm = utils.normalize_adj_tensor(modified_adj)
+
+        loss, reg_loss = victim_model.bpr_loss(adj_norm, batch_users, batch_pos, batch_neg)
+
+        adj_grad = torch.autograd.grad(loss, self.adj_changes, retain_graph=True)[0]
+
+        # lr=200/np.sqrt(t+1)
+        lr = 200
+        self.adj_changes.data.copy_(lr * adj_grad)
+        # print(self.adj_changes) used in perturbation 0.1 log
+        self.projection(perturbations)
+
+        self.random_sample_batch(victim_model, ori_adj, perturbations, batch_users, batch_pos, batch_neg, num_users)
+
+        adj_modified = self.get_modified_adj(ori_adj, num_users).detach()
+
+        self.adj_changes.data.fill_(0)
+
+        return adj_modified
+
     def random_sample(self, ori_adj, perturbations, users, posItems, negItems, num_users):
         K = 5
         best_loss = -1000
@@ -121,6 +143,34 @@ class PGDAttack(BaseAttack):
                     best_s = sampled
             self.adj_changes.data.copy_(torch.tensor(best_s))
 
+    def random_sample_batch(self, victim_model, ori_adj, perturbations, batch_users, batch_pos, batch_neg, num_users):
+        K = 5
+        best_loss = -1000
+        with torch.no_grad():
+            s = self.adj_changes
+            for i in range(K):
+                sampled = torch.distributions.binomial.Binomial(1, s).sample()
+
+                # print(sampled.sum())
+                if sampled.sum() > perturbations:
+                    continue
+                self.adj_changes.data.copy_(sampled)
+
+                modified_adj = self.get_modified_adj(ori_adj, num_users)
+                adj_norm = utils.normalize_adj_tensor(modified_adj)
+
+                loss_total = 0.
+
+                loss, reg_loss = victim_model.bpr_loss(adj_norm, batch_users, batch_pos, batch_neg)
+
+                # print(loss)
+                loss_total += loss.cpu().item()
+
+                if best_loss < loss_total:
+                    best_loss = loss_total
+                    best_s = sampled
+            self.adj_changes.data.copy_(best_s)
+
     def _loss(self, output, labels):
         if self.loss_type == "CE":
             loss = F.nll_loss(output, labels)
@@ -154,11 +204,6 @@ class PGDAttack(BaseAttack):
         # modified_adj=m+ori_adj
         modified_adj[:num_users, :num_users] = 0
         modified_adj[num_users:, num_users:] = 0
-
-        # set diagonal to 0
-        adj_diag = torch.diag(modified_adj)
-        adj_diag_matrix = torch.diag_embed(adj_diag)
-        modified_adj = modified_adj - adj_diag_matrix
 
         return modified_adj
 

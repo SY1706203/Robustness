@@ -6,7 +6,7 @@ import utils
 
 
 class LightGCN(nn.Module):
-    def __init__(self, device=None):
+    def __init__(self, device=None, sparse=True):
         super(LightGCN, self).__init__()
 
         assert device is not None, "Please specify 'device'!"
@@ -18,6 +18,7 @@ class LightGCN(nn.Module):
         self.num_items = dataset.m_item
         self.latent_dim = 64
         self.f = nn.Sigmoid()
+        self._is_sparse = sparse
         self.adj = None
 
         self.tau_plus = 1e-3
@@ -42,13 +43,21 @@ class LightGCN(nn.Module):
         pass
 
     def fit(self, adj, users, posItems, negItems):
-        if type(adj) is not torch.Tensor:
-            adj_norm = utils.normalize_adj_tensor(adj, sparse=True)
-            adj = utils.to_tensor(adj_norm, device=self.device)
+        if self._is_sparse:
+            if type(adj) is not torch.Tensor:
+                adj_norm = utils.normalize_adj_tensor(adj, sparse=True)
+                adj = utils.to_tensor(adj_norm, device=self.device)
+            else:
+                adj_norm = utils.normalize_adj_tensor(adj, sparse=True)
+                adj = adj_norm.to(self.device)
+            # self.adj=adj
         else:
-            adj_norm = utils.normalize_adj_tensor(adj, sparse=True)
-            adj = adj_norm.to(self.device)
-        # self.adj=adj
+            if type(adj) is not torch.Tensor:
+                adj_norm = utils.normalize_adj_tensor(adj)
+                adj = utils.to_tensor(adj_norm, device=self.device)
+            else:
+                adj_norm = utils.normalize_adj_tensor(adj)
+                adj = adj_norm.to(self.device)
 
         self._train_without_val(adj, users, posItems, negItems)
 
@@ -77,7 +86,10 @@ class LightGCN(nn.Module):
         g_droped = adj
 
         for layer in range(self.n_layers):
-            all_emb = torch.sparse.mm(g_droped, all_emb)
+            if self._is_sparse:
+                all_emb = torch.sparse.mm(g_droped, all_emb)
+            else:
+                all_emb = torch.mm(g_droped, all_emb)
             embs.append(all_emb)
         embs = torch.stack(embs, dim=1)
         # print(embs.size())
