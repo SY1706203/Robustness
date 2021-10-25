@@ -626,7 +626,7 @@ class GROC_loss(nn.Module):
 
                 adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert.to_sparse(), self.d_mtr, sparse=True)
 
-                if self.args.normal_gradients:
+                if not self.args.use_IntegratedGradient:
                     gcl_grad = ori_gcl_computing(self.ori_adj, self.ori_model, adj_for_loss_gradient,
                                                  adj_for_loss_gradient, batch_users, batch_pos, self.args, self.device,
                                                  True, mask_1, mask_2, query_groc=True)
