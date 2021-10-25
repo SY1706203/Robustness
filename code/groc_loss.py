@@ -609,7 +609,6 @@ class GROC_loss(nn.Module):
             aver_groc_loss = 0.
             for (batch_i, (batch_users, batch_pos, batch_neg)) \
                     in enumerate(utils.minibatch(users, posItems, negItems, batch_size=self.args.batch_size)):
-                batch_items = utils.shuffle(torch.cat((batch_pos, batch_neg))).to(self.device)
 
                 batch_users_unique = batch_users.unique()  # only select 10 anchor nodes for adj_edge insertion
 
@@ -642,7 +641,7 @@ class GROC_loss(nn.Module):
                 else:
                     edge_gradient = self.integrated_gradient.get_integrated_gradient(adj_for_loss_gradient,
                                                                                      self.ori_model, self.ori_adj,
-                                                                                     batch_users, batch_items,
+                                                                                     batch_users, batch_pos,
                                                                                      mask_1, mask_2)
                 del adj_for_loss_gradient
                 gc.collect()
