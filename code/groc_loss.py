@@ -13,7 +13,7 @@ from GraphContrastiveLoss import ori_gcl_computing
 
 
 class GROC_loss(nn.Module):
-    def __init__(self, ori_model, ori_adj, d_mtr, args):
+    def __init__(self, ori_model, ori_adj, d_mtr, args, pgd_model=None):
         super(GROC_loss, self).__init__()
         self.ori_adj = ori_adj
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -22,7 +22,8 @@ class GROC_loss(nn.Module):
         self.args = args
         self.num_users = self.ori_model.num_users
         self.num_items = self.ori_model.num_items
-        self.integrated_gradient = IntegratedGradients(self.ori_model, self.device, sparse=False)
+        self.integrated_gradient = IntegratedGradients(self.ori_model, self.args, self.device, sparse=True)
+        self.pgd_model = pgd_model
 
     def get_embed_groc(self, trn_model, modified_adj, users, items, mask):
 
@@ -398,54 +399,54 @@ class GROC_loss(nn.Module):
                 batch_items = utils.shuffle(torch.cat((batch_pos, batch_neg))).to(self.device)
 
                 batch_users_unique = batch_users.unique()  # only select 10 anchor nodes for adj_edge insertion
+                if self.args.use_groc_framework:
+                    adj_with_insert = self.get_modified_adj_for_insert(batch_users_unique, adj_with_2_hops)  # 2 views are same
 
-                adj_with_insert = self.get_modified_adj_for_insert(batch_users_unique, adj_with_2_hops)  # 2 views are same
+                    mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1) \
+                        .to(self.device)
+                    mask_2 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_2) \
+                        .to(self.device)
 
-                mask_1 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_1) \
-                    .to(self.device)
-                mask_2 = (torch.FloatTensor(self.ori_model.latent_dim).uniform_() < self.args.mask_prob_2) \
-                    .to(self.device)
+                    # batch_users_groc = batch_all_node[batch_all_node < self.num_users]
+                    # batch_items = batch_all_node[batch_all_node >= self.num_users] - self.num_users
 
-                # batch_users_groc = batch_all_node[batch_all_node < self.num_users]
-                # batch_items = batch_all_node[batch_all_node >= self.num_users] - self.num_users
+                    adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert.to_sparse(), self.d_mtr, sparse=True)
 
-                adj_for_loss_gradient = utils.normalize_adj_tensor(adj_with_insert.to_sparse(), self.d_mtr, sparse=True)
+                    if not self.args.use_IntegratedGradient:
+                        loss_for_grad = ori_gcl_computing(self.ori_adj, self.ori_model, adj_for_loss_gradient,
+                                                          adj_for_loss_gradient, batch_users, batch_pos, self.args,
+                                                          self.device, True, mask_1, mask_2, query_groc=True)
 
-                if self.args.normal_gradients:
-                    loss_for_grad = ori_gcl_computing(self.ori_adj, self.ori_model, adj_for_loss_gradient,
-                                                      adj_for_loss_gradient, batch_users, batch_pos, self.args,
-                                                      self.device, True, mask_1, mask_2, query_groc=True)
+                        edge_gradient = torch.autograd.grad(loss_for_grad, self.ori_model.adj, retain_graph=True)[0]
 
-                    edge_gradient = torch.autograd.grad(loss_for_grad, self.ori_model.adj, retain_graph=True)[0]
+                    else:
+                        edge_gradient = self.integrated_gradient.get_integrated_gradient(adj_for_loss_gradient,
+                                                                                         self.ori_model, self.ori_adj,
+                                                                                         batch_users, batch_pos,
+                                                                                         mask_1, mask_2)
+                    del adj_for_loss_gradient
+                    gc.collect()
 
-                else:
-                    edge_gradient = self.integrated_gradient.get_integrated_gradient(adj_for_loss_gradient,
-                                                                                     self.ori_model, self.ori_adj,
-                                                                                     batch_users, batch_items,
-                                                                                     mask_1, mask_2)
-                del adj_for_loss_gradient
-                gc.collect()
+                    adj_insert_remove_1 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_1,
+                                                                                                   self.args.remove_prob_1,
+                                                                                                   batch_users_unique,
+                                                                                                   edge_gradient,
+                                                                                                   adj_with_insert,
+                                                                                                   tril_adj_index_0,
+                                                                                                   tril_adj_index_1)
 
-                adj_insert_remove_1 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_1,
-                                                                                               self.args.remove_prob_1,
-                                                                                               batch_users_unique,
-                                                                                               edge_gradient,
-                                                                                               adj_with_insert,
-                                                                                               tril_adj_index_0,
-                                                                                               tril_adj_index_1)
+                    adj_insert_remove_2 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_2,
+                                                                                                   self.args.remove_prob_2,
+                                                                                                   batch_users_unique,
+                                                                                                   edge_gradient,
+                                                                                                   adj_with_insert,
+                                                                                                   tril_adj_index_0,
+                                                                                                   tril_adj_index_1)
 
-                adj_insert_remove_2 = self.get_modified_adj_with_insert_and_remove_by_gradient(self.args.insert_prob_2,
-                                                                                               self.args.remove_prob_2,
-                                                                                               batch_users_unique,
-                                                                                               edge_gradient,
-                                                                                               adj_with_insert,
-                                                                                               tril_adj_index_0,
-                                                                                               tril_adj_index_1)
+                    del adj_with_insert
 
-                del adj_with_insert
-
-                adj_norm_1 = utils.normalize_adj_tensor(adj_insert_remove_1.to_sparse(), self.d_mtr, sparse=True)
-                adj_norm_2 = utils.normalize_adj_tensor(adj_insert_remove_2.to_sparse(), self.d_mtr, sparse=True)
+                    adj_norm_1 = utils.normalize_adj_tensor(adj_insert_remove_1.to_sparse(), self.d_mtr, sparse=True)
+                    adj_norm_2 = utils.normalize_adj_tensor(adj_insert_remove_2.to_sparse(), self.d_mtr, sparse=True)
 
                 groc_loss = ori_gcl_computing(self.ori_adj, self.ori_model, adj_norm_1, adj_norm_2, batch_users,
                                               batch_pos, self.args, self.device, mask_1=mask_1, mask_2=mask_2)
