@@ -197,7 +197,7 @@ class PGDAttack(BaseAttack):
             # self.complementary=(1-torch.eye(self.nnodes).to(self.device)-ori_adj)-ori_adj
 
         m = torch.zeros((self.nnodes, self.nnodes)).to(self.device)
-        tril_indices = torch.tril_indices(row=self.nnodes - 1, col=self.nnodes - 1, offset=0)
+        tril_indices = torch.tril_indices(row=self.nnodes - 1, col=self.nnodes - 1, offset=0).to(self.device)
         m[tril_indices[0], tril_indices[1]] = self.adj_changes
         m = m + m.t()
         modified_adj = self.complementary * m + ori_adj

@@ -24,10 +24,12 @@ class IntegratedGradients:
             if non_exist_edge:
                 adj_baseline = torch.ones(adj.shape).to(self.device)
             else:
-
-                i = torch.tensor([[], []]).to(self.device)
-                v = torch.tensor([]).to(self.device)
-                adj_baseline = torch.sparse_coo_tensor(i, v, ori_adj.shape).to(self.device)
+                if self._is_sparse:
+                    i = torch.tensor([[], []]).to(self.device)
+                    v = torch.tensor([]).to(self.device)
+                    adj_baseline = torch.sparse_coo_tensor(i, v, ori_adj.shape).to(self.device)
+                else:
+                    adj_baseline = torch.zeros(adj.shape).to(self.device)
 
         adj_diff = adj - adj_baseline
 
@@ -48,12 +50,15 @@ class IntegratedGradients:
 
             del grads
 
+        if self._is_sparse:
+            try:
+                total_gradients = torch.sparse.mm(total_gradients, adj_diff) / steps
+            except:
+                total_gradients = (torch.sparse.mm(total_gradients, adj_diff.to_dense()) / steps).to_sparse()
+
+        else:
+            total_gradients = (torch.mm(total_gradients, adj_diff) / steps).to_sparse()
+
         gc.collect()
 
-        if self._is_sparse:
-            total_gradients = torch.sparse.mm(total_gradients, adj_diff) / steps
-        else:
-            total_gradients = torch.mm(total_gradients, adj_diff) / steps
-
         return total_gradients
-
