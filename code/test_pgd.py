@@ -181,6 +181,7 @@ if args.train_groc:
         print("Mode:GROC + BPR")
         pgd_model = PGDAttack(model=Recmodel, nnodes=adj.size(1), device=device)
         pgd_model = pgd_model.to(device)
+        Recmodel._is_sparse = True
         groc = GROC_loss(Recmodel, adj, d_mtr, args, pgd_model)
         groc.groc_train_with_bpr(data_len, users, posItems, negItems, perturbations)
 
