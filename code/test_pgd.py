@@ -8,7 +8,9 @@ from topology_attack import PGDAttack
 import utils
 from utils_attack import attack_model, attack_randomly, attack_embedding
 import Procedure
+from scipy.sparse import csc_matrix
 from groc_loss import GROC_loss
+from adj_generation_LP import links2subgraphs, sample_neg, generate_node2vec_embeddings
 
 
 parser = argparse.ArgumentParser()
@@ -61,6 +63,13 @@ parser.add_argument('--insert_prob_1',                    type=float,   default=
 parser.add_argument('--insert_prob_2',                    type=float,   default=0.004,                                                                                                                                                   help='mask embedding of users/items of GCN')
 parser.add_argument('--remove_prob_1',                    type=float,   default=0.2,                                                                                                                                                   help='mask embedding of users/items of GCN')
 parser.add_argument('--remove_prob_2',                    type=float,   default=0.4,                                                                                                                                                   help='mask embedding of users/items of GCN')
+parser.add_argument('--generate_perturb_adj',         type=bool,   default=True,                                                                                                                                                   help='mask embedding of users/items of GCN')
+parser.add_argument('--test_ratio',                   type=float,   default=0.2,                                                                                                                                                   help='mask embedding of users/items of GCN')
+parser.add_argument('--max_train_num',                   type=int,   default=200,                                                                                                                                                   help='mask embedding of users/items of GCN')
+parser.add_argument('--use_embedding',                   type=bool,   default=False,                                                                                                                                                   help='mask embedding of users/items of GCN')
+parser.add_argument('--hop',                           type=int,   default=1,                                                                                                                                                   help='mask embedding of users/items of GCN')
+parser.add_argument('--no_parallel',                     type=bool,   default=True,                                                                                                                                                   help='mask embedding of users/items of GCN')
+parser.add_argument('--max_nodes_per_hop',                 type=int,   default=20,                                                                                                                                                   help='mask embedding of users/items of GCN')
 
 args = parser.parse_args()
 
@@ -75,9 +84,9 @@ torch.manual_seed(args.seed)
 if device != 'cpu':
     torch.cuda.manual_seed(args.seed)
 
-adj = dataset.getSparseGraph()
-adj = torch.FloatTensor(adj.todense()).to(device)
+net = dataset.getSparseGraph()
 
+adj = torch.FloatTensor(net.todense()).to(device)
 rowsum = adj.sum(1)
 r_inv = rowsum.pow(-1 / 2).flatten()
 r_inv[torch.isinf(r_inv)] = 0.
@@ -99,6 +108,33 @@ Recmodel = Recmodel.to(device)
 
 num_users = Recmodel.num_users
 
+if args.generate_perturb_adj:
+    net = csc_matrix(net)
+    train_pos, train_neg, test_pos, test_neg = sample_neg(
+        net, args.test_ratio, max_train_num=args.max_train_num
+    )
+
+    A = net.copy()  # the observed network
+    A[test_pos[0], test_pos[1]] = 0  # mask test links
+    A[test_pos[1], test_pos[0]] = 0  # mask test links
+    A.eliminate_zeros()  # make sure the links are masked when using the sparse matrix in scipy-1.3.x
+
+    node_information = None
+    if args.use_embedding:
+        embeddings = generate_node2vec_embeddings(A, 128, True, train_neg)
+        node_information = embeddings
+
+    train_graphs, test_graphs, max_n_label = links2subgraphs(
+        A,
+        train_pos,
+        train_neg,
+        test_pos,
+        test_neg,
+        args.hop,
+        args.max_nodes_per_hop,
+        node_information,
+        args.no_parallel
+    )
 
 if args.random_perturb:
     print("train model using random perturbation")
