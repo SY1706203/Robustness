@@ -13,7 +13,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 # items pre-processing
 
 data_item = []
-with gzip.open('C:/Users/Zongyue Li/Downloads/meta_Gift_Cards.json.gz') as f:
+with gzip.open('/home/stud/zongyue/workarea/Robustness-1/data/meta_Gift_Cards.json.gz') as f:
     for l in f:
         data_item.append(json.loads(l.strip()))
 
@@ -30,7 +30,7 @@ if 'category' in df_item:
 
 # user pre-processing
 data_user = []
-with gzip.open('C:/Users/Zongyue Li/Downloads/Gift_Cards.json.gz') as f:
+with gzip.open('/home/stud/zongyue/workarea/Robustness-1/data/Gift_Cards.json.gz') as f:
     for l in f:
         data_user.append(json.loads(l.strip()))
 
