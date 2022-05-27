@@ -106,9 +106,9 @@ perturbations = int(args.ptb_rate * (adj.sum() // args.perturb_strength_list[arg
 # adj = torch.FloatTensor(adj).to(device)
 
 users, posItems, negItems = utils.getTrainSet(dataset)
-users = users[:30]
-posItems = posItems[:30]
-negItems = negItems[:30]
+# users = users[:30]
+# posItems = posItems[:30]
+# negItems = negItems[:30]
 data_len = len(users)
 
 # Setup and fit origin Model
