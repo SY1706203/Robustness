@@ -2,15 +2,19 @@ import torch
 import numpy as np
 import argparse
 import os
+import random
 import lightgcn
+import ngcf_ori
 from register import dataset
+from tqdm import tqdm
 from topology_attack import PGDAttack
 import utils
 from utils_attack import attack_model, attack_randomly, attack_embedding
 import Procedure
 from scipy.sparse import csc_matrix
 from groc_loss import GROC_loss
-from adj_generation_LP import links2subgraphs, sample_neg, generate_node2vec_embeddings
+from adj_generation_LP import links2subgraphs, sample_neg, generate_node2vec_embeddings, subgraph_extraction_labeling
+from adj_constraint import Nettack
 
 
 parser = argparse.ArgumentParser()
@@ -70,6 +74,9 @@ parser.add_argument('--use_embedding',                   type=bool,   default=Fa
 parser.add_argument('--hop',                           type=int,   default=1,                                                                                                                                                   help='mask embedding of users/items of GCN')
 parser.add_argument('--no_parallel',                     type=bool,   default=True,                                                                                                                                                   help='mask embedding of users/items of GCN')
 parser.add_argument('--max_nodes_per_hop',                 type=int,   default=20,                                                                                                                                                   help='mask embedding of users/items of GCN')
+parser.add_argument('--node_percentage_list',                 type=list,   default=[0.25, 0.5, 0.75, 1],                                                                                                                                                   help='mask embedding of users/items of GCN')
+parser.add_argument('--node_percentage_list_index',         type=int,   default=0,                                                                                                                                                   help='mask embedding of users/items of GCN')
+parser.add_argument('--model_ngcf',                         type=bool,   default=True,                                                                                                                                                   help='mask embedding of users/items of GCN')
 
 args = parser.parse_args()
 
@@ -85,6 +92,7 @@ if device != 'cpu':
     torch.cuda.manual_seed(args.seed)
 
 net = dataset.getSparseGraph()
+net = csc_matrix(net)
 
 adj = torch.FloatTensor(net.todense()).to(device)
 rowsum = adj.sum(1)
@@ -98,15 +106,75 @@ perturbations = int(args.ptb_rate * (adj.sum() // args.perturb_strength_list[arg
 # adj = torch.FloatTensor(adj).to(device)
 
 users, posItems, negItems = utils.getTrainSet(dataset)
+users = users[:30]
+posItems = posItems[:30]
+negItems = negItems[:30]
 data_len = len(users)
 
 # Setup and fit origin Model
 
 Recmodel = lightgcn.LightGCN(device)
 Recmodel = Recmodel.to(device)
-#Recmodel.fit(adj, users, posItems, negItems)
+# Recmodel.fit(adj, users, posItems, negItems)
 
 num_users = Recmodel.num_users
+num_items = Recmodel.num_items
+adj_shape = num_users + num_items
+
+if args.model_ngcf:
+    print("train model NGCF")
+    print("=================================================")
+
+    pgd_model = PGDAttack(model=Recmodel, nnodes=adj.size(1), device=device)
+    pgd_model = pgd_model.to(device)
+
+    Recmodel = ngcf_ori.NGCF(num_users, num_items, device)
+    Recmodel = Recmodel.to(device)
+
+    groc = GROC_loss(Recmodel, adj, d_mtr, args, pgd_model)
+    groc.groc_train_with_bpr(data_len, users, posItems, negItems, perturbations)
+
+    print("save model")
+    torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) +
+               '/data/NGCF_after_GROC_{}.pt'.format(args.loss_weight_bpr))
+
+    print("===========================")
+
+    print("original model performance on original adjacency matrix:")
+    print("===========================")
+    Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
+    print("===========================")
+
+    print("ori model performance after GROC learning on modified adjacency matrix A:")
+    print("===========================")
+    modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
+                                  args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+    Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_a), None, 0)
+
+    '''
+    # data_prepocessing
+    user_fe = torch.load('C:/tmp/user_feature_tensor.pt')
+    item_fe = torch.load('C:/tmp/item_feature_tensor.pt')
+    num_users = user_fe.size()[0]
+    num_items = item_fe.size()[0]
+
+    if user_fe.size()[1] > item_fe.size()[1]:
+        target = torch.zeros(item_fe.size()[0], user_fe.size()[1])
+        target[:, :item_fe.size()[1]] = item_fe
+        feature_dim = user_fe.size()[1]
+
+        feature = torch.cat((user_fe, target), 1)
+    else:
+        target = torch.zeros(user_fe.size()[0], item_fe.size()[1])
+        target[:, :user_fe.size()[1]] = user_fe
+        feature_dim = item_fe.size()[1]
+
+        feature = torch.cat((target, item_fe), 1)
+
+    Recmodel = ngcf_ori.NGCF(num_users, num_items, feature_dim, device)
+    Recmodel = Recmodel.to(device)
+    '''
+
 
 if args.generate_perturb_adj:
     net = csc_matrix(net)
@@ -120,21 +188,41 @@ if args.generate_perturb_adj:
     A.eliminate_zeros()  # make sure the links are masked when using the sparse matrix in scipy-1.3.x
 
     node_information = None
-    if args.use_embedding:
-        embeddings = generate_node2vec_embeddings(A, 128, True, train_neg)
-        node_information = embeddings
+    model = utils.Fake_model()
+    nettack = Nettack(model=model, nnodes=adj.size(1), device=device)
+    # if args.use_embedding:
+    #     embeddings = generate_node2vec_embeddings(A, 128, True, train_neg)
+    #     node_information = embeddings
+    # for i, j in tqdm(zip(train_pos[0], train_pos[1])):
+    #     g, n_labels, n_features = subgraph_extraction_labeling(
+    #         (i, j), A, args.hop, args.max_nodes_per_hop, node_information
+    #     )
+    #     node_list_i = utils.node_list_generation(args, num_users, num_items, i, adj_shape)
+    #     node_list_j = utils.node_list_generation(args, num_users, num_items, j, adj_shape)
+#
+    #     node_i = [i] * len(node_list_i)
+    #     node_j = [j] * len(node_list_j)
+#
+    #     modified_adj = adj.clone().detach()
+    #     modified_adj[node_i, node_list_i] = modified_adj[node_i, node_list_i] * (-2) + 1
+    #     modified_adj[node_j, node_list_j] = modified_adj[node_j, node_2list_j] * (-2) + 1
 
-    train_graphs, test_graphs, max_n_label = links2subgraphs(
-        A,
-        train_pos,
-        train_neg,
-        test_pos,
-        test_neg,
-        args.hop,
-        args.max_nodes_per_hop,
-        node_information,
-        args.no_parallel
-    )
+    # modified_adj_mask = nettack.get_adj_score_only(features=None, adj=adj, target_node, num_users=num_users,
+    #                                              n_perturbations=perturbations)
+
+    # modified_adj = modified_adj * modified_adj_mask
+
+    # train_graphs, test_graphs, max_n_label = links2subgraphs(
+    #     A,
+    #     train_pos,
+    #     train_neg,
+    #     test_pos,
+    #     test_neg,
+    #     args.hop,
+    #     args.max_nodes_per_hop,
+    #     node_information,
+    #     args.no_parallel
+    # )
 
 if args.random_perturb:
     print("train model using random perturbation")

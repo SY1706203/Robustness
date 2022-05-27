@@ -1,46 +1,63 @@
+'''
+Created on March 24, 2020
+@author: Tinglin Huang (huangtinglin@outlook.com)
+'''
+
 import torch
-from torch import nn, optim
+import torch.nn as nn
+import torch.nn.functional as F
+from torch import optim
 import numpy as np
-from register import dataset
+
 import utils
 
 
-class LightGCN(nn.Module):
-    def __init__(self, device=None, sparse=True):
-        super(LightGCN, self).__init__()
-
-        assert device is not None, "Please specify 'device'!"
+class NGCF(nn.Module):
+    def __init__(self, n_user, n_item, device, sparse=True):
+        super(NGCF, self).__init__()
         self.device = device
         self.lr = 0.001
         self.weight_decay = 1e-4
-        self.n_layers = 3
-        self.num_users = dataset.n_user
-        self.num_items = dataset.m_item
+        self.n_layers = 2
+        self.num_users = n_user
+        self.num_items = n_item
         self.latent_dim = 64
         self.f = nn.Sigmoid()
         self._is_sparse = sparse
-        self.adj = nn.Parameter(torch.zeros(9458, 9458).to_sparse())
 
         self.tau_plus = 1e-3
         self.T = 0.07
+        self.adj = nn.Parameter(torch.zeros(9458, 9458).to_sparse())
 
-        self.embedding_user = torch.nn.Embedding(
-            num_embeddings=self.num_users, embedding_dim=self.latent_dim)
-        self.embedding_item = torch.nn.Embedding(
-            num_embeddings=self.num_items, embedding_dim=self.latent_dim)
+        """
+        *********************************************************
+        Init the weight of user-item.
+        """
+        self.embedding_dict, self.weight_dict = self.init_weight()
 
-        nn.init.xavier_uniform_(self.embedding_user.weight, gain=1)
-        nn.init.xavier_uniform_(self.embedding_item.weight, gain=1)
+    def init_weight(self):
+        # xavier init
+        initializer = nn.init.xavier_uniform_
 
-    def adj_getter(self):
-        if self.adj is None:
-            raise Exception(
-                "Adj doesn't exist in the LightGCN model. Make sure you called adj_setter first and then call adj_getter."
-            )
-        return self.adj
+        embedding_dict = nn.ParameterDict({
+            'user_emb': nn.Parameter(initializer(torch.empty(self.num_users,
+                                                 self.latent_dim))),
+            'item_emb': nn.Parameter(initializer(torch.empty(self.num_items,
+                                                 self.latent_dim)))
+        })
 
-    def adj_setter(self, adj):
-        pass
+        weight_dict = nn.ParameterDict()
+        layers = [self.latent_dim] + self.n_layers * [self.latent_dim]
+        for k in range(self.n_layers):
+            weight_dict.update({'W_gc_%d'%k: nn.Parameter(initializer(torch.empty(layers[k],
+                                                                      layers[k+1])))})
+            weight_dict.update({'b_gc_%d'%k: nn.Parameter(initializer(torch.empty(1, layers[k+1])))})
+
+            weight_dict.update({'W_bi_%d'%k: nn.Parameter(initializer(torch.empty(layers[k],
+                                                                      layers[k+1])))})
+            weight_dict.update({'b_bi_%d'%k: nn.Parameter(initializer(torch.empty(1, layers[k+1])))})
+
+        return embedding_dict, weight_dict
 
     def fit(self, adj, users, posItems, negItems):
         if self._is_sparse:
@@ -68,34 +85,45 @@ class LightGCN(nn.Module):
         rating = self.f(torch.matmul(users_emb, items_emb.t()))
         return rating
 
-    def computer(self, adj, delta_u=None, delta_i=None):
+    def computer(self, adj):
         # TODO: override lightGCN here
         """
         propagate methods for lightGCN
         """
-        if delta_i is None and delta_u is None:
-            users_emb = self.embedding_user.weight
-            items_emb = self.embedding_item.weight
-        else:
-            users_emb = self.embedding_user.weight + delta_u
-            items_emb = self.embedding_item.weight + delta_i
-
-        all_emb = torch.cat([users_emb, items_emb])
-        #   torch.split(all_emb , [self.num_users, self.num_items])
-        embs = [all_emb]
 
         g_droped = adj
 
-        for layer in range(self.n_layers):
-            if self._is_sparse:
-                all_emb = torch.sparse.mm(g_droped, all_emb)
-            else:
-                all_emb = torch.mm(g_droped, all_emb)
-            embs.append(all_emb)
-        embs = torch.stack(embs, dim=1)
-        # print(embs.size())
-        light_out = torch.mean(embs, dim=1)
-        users, items = torch.split(light_out, [self.num_users, self.num_items])
+        self.init_weight()
+        all_emb = torch.cat([self.embedding_dict['user_emb'], self.embedding_dict['item_emb']], 0)
+        all_embedding = [all_emb]
+
+        for k in range(self.n_layers):
+            side_embeddings = torch.sparse.mm(g_droped, all_emb)
+
+            # transformed sum messages of neighbors.
+            sum_embeddings = torch.matmul(side_embeddings, self.weight_dict['W_gc_%d' % k]) \
+                             + self.weight_dict['b_gc_%d' % k]
+
+            # bi messages of neighbors.
+            # element-wise product
+            bi_embeddings = torch.mul(all_emb, side_embeddings)
+            # transformed bi messages of neighbors.
+            bi_embeddings = torch.matmul(bi_embeddings, self.weight_dict['W_bi_%d' % k]) \
+                            + self.weight_dict['b_bi_%d' % k]
+
+            # non-linear activation.
+            ego_embeddings = nn.LeakyReLU(negative_slope=0.2)(sum_embeddings + bi_embeddings)
+
+            # message dropout.
+            # ego_embeddings = nn.Dropout(self.mess_dropout[k])(ego_embeddings)
+
+            # normalize the distribution of embeddings.
+            norm_embeddings = F.normalize(ego_embeddings, p=2, dim=1)
+
+            all_embedding += [norm_embeddings]
+
+        all_emb = torch.cat(all_embedding, 1)
+        users, items = torch.split(all_emb, [self.num_users, self.num_items])
         return users, items
 
     def forward(self, adj, users, items):
@@ -109,20 +137,18 @@ class LightGCN(nn.Module):
         gamma = torch.sum(inner_pro, dim=1)
         return gamma
 
-    def getEmbedding(self, adj, users, pos_items, delta_u=None, delta_i=None, query_groc=False):
+    def getEmbedding(self, adj, users, pos_items, query_groc=False):
         """
         query from GROC means that we want to push adj into computational graph
         """
-        if query_groc:
-            self.adj = nn.Parameter(adj)
-            all_users, all_items = self.computer(self.adj, delta_u, delta_i)
-        else:
-            all_users, all_items = self.computer(adj, delta_u, delta_i)
+        self.adj = nn.Parameter(adj)
+        all_users, all_items = self.computer(self.adj)
+
         users_emb = all_users[users]
         pos_emb = all_items[pos_items]
         # neg_emb = all_items[neg_items]
-        users_emb_ego = self.embedding_user(users)
-        pos_emb_ego = self.embedding_item(pos_items)
+        users_emb_ego = self.embedding_dict['user_emb'].data[users]
+        pos_emb_ego = self.embedding_dict['item_emb'].data[pos_items]
         # neg_emb_ego = self.embedding_item(neg_items)
         return users_emb, pos_emb, users_emb_ego, pos_emb_ego
 
@@ -135,7 +161,7 @@ class LightGCN(nn.Module):
         # negative_mask=torch.cat((negative_mask,negative_mask),0)
         return negative_mask
 
-    def bpr_loss(self, adj, users, poss, neg, delta_u=None, delta_i=None):
+    def bpr_loss(self, adj, users, poss, neg):
         '''
         (users_emb, pos_emb, neg_emb,
          userEmb0, posEmb0, negEmb0) = self.getEmbedding(adj, users.long(), pos.long(), neg.long())
@@ -150,7 +176,7 @@ class LightGCN(nn.Module):
         loss = torch.mean(torch.nn.functional.softplus(neg_scores - pos_scores))
         '''
 
-        (users_emb, pos_emb, userEmb0, posEmb0) = self.getEmbedding(adj, users.long(), poss.long(), delta_u, delta_i)
+        (users_emb, pos_emb, userEmb0, posEmb0) = self.getEmbedding(adj, users.long(), poss.long())
         # pos_emb_old=pos_emb
         users_emb = nn.functional.normalize(users_emb, dim=1)
         pos_emb = nn.functional.normalize(pos_emb, dim=1)

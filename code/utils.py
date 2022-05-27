@@ -1,5 +1,6 @@
 import scipy.sparse as sp
 import world
+import random
 import torch
 from torch import nn, optim
 import numpy as np
@@ -352,6 +353,22 @@ def scheduler_groc(optimizer, data_len, warmup_steps, n_batch, n_epochs):
         optimizer, num_warmup_steps=warmup_steps, num_training_steps=num_training_steps
     )
     return scheduler_
+
+
+def node_list_generation(args, num_users, num_items, i, adj_shape):
+    if i > num_users:  # i is item
+        n = int(args.node_percentage_list[args.node_percentage_list_index] * num_users)
+    else:
+        n = int(args.node_percentage_list[args.node_percentage_list_index] * num_items)
+    return random.sample(range(num_users, adj_shape), n)
+
+
+class Fake_model:
+    def __init__(self):
+        self.with_relu = False
+        self.nclass = 1
+        self.nfeat = 100
+        self.hidden_sizes = 128
 
 # ====================end Metrics=============================
 # =========================================================
