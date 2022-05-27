@@ -84,337 +84,337 @@ print("=================================================")
 print("All parameters in args")
 print(args)
 print("=================================================")
-
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-np.random.seed(args.seed)
-torch.manual_seed(args.seed)
-if device != 'cpu':
-    torch.cuda.manual_seed(args.seed)
-
-net = dataset.getSparseGraph()
-net = csc_matrix(net)
-
-adj = torch.FloatTensor(net.todense()).to(device)
-rowsum = adj.sum(1)
-r_inv = rowsum.pow(-1 / 2).flatten()
-r_inv[torch.isinf(r_inv)] = 0.
-d_mtr = torch.diag(r_inv).to_sparse().to(device)
-
-perturbations = int(args.ptb_rate * (adj.sum() // args.perturb_strength_list[args.modified_adj_id]))
-# perturbations = int(args.ptb_rate * ((dataset.trainDataSize+dataset.testDataSize)//2))
-
-# adj = torch.FloatTensor(adj).to(device)
-
-users, posItems, negItems = utils.getTrainSet(dataset)
-# users = users[:30]
-# posItems = posItems[:30]
-# negItems = negItems[:30]
-data_len = len(users)
-
-# Setup and fit origin Model
-
-Recmodel = lightgcn.LightGCN(device)
-Recmodel = Recmodel.to(device)
-# Recmodel.fit(adj, users, posItems, negItems)
-
-num_users = Recmodel.num_users
-num_items = Recmodel.num_items
-adj_shape = num_users + num_items
-
-if args.model_ngcf:
-    print("train model NGCF")
-    print("=================================================")
-
-    pgd_model = PGDAttack(model=Recmodel, nnodes=adj.size(1), device=device)
-    pgd_model = pgd_model.to(device)
-
-    Recmodel = ngcf_ori.NGCF(num_users, num_items, device)
-    Recmodel = Recmodel.to(device)
-
-    groc = GROC_loss(Recmodel, adj, d_mtr, args, pgd_model)
-    groc.groc_train_with_bpr(data_len, users, posItems, negItems, perturbations)
-
-    print("save model")
-    torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) +
-               '/data/NGCF_after_GROC_{}.pt'.format(args.loss_weight_bpr))
-
-    print("===========================")
-
-    print("original model performance on original adjacency matrix:")
-    print("===========================")
-    Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
-    print("===========================")
-
-    print("ori model performance after GROC learning on modified adjacency matrix A:")
-    print("===========================")
-    modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
-                                  args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
-    Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_a), None, 0)
-
-    '''
-    # data_prepocessing
-    user_fe = torch.load('C:/tmp/user_feature_tensor.pt')
-    item_fe = torch.load('C:/tmp/item_feature_tensor.pt')
-    num_users = user_fe.size()[0]
-    num_items = item_fe.size()[0]
-
-    if user_fe.size()[1] > item_fe.size()[1]:
-        target = torch.zeros(item_fe.size()[0], user_fe.size()[1])
-        target[:, :item_fe.size()[1]] = item_fe
-        feature_dim = user_fe.size()[1]
-
-        feature = torch.cat((user_fe, target), 1)
-    else:
-        target = torch.zeros(user_fe.size()[0], item_fe.size()[1])
-        target[:, :user_fe.size()[1]] = user_fe
-        feature_dim = item_fe.size()[1]
-
-        feature = torch.cat((target, item_fe), 1)
-
-    Recmodel = ngcf_ori.NGCF(num_users, num_items, feature_dim, device)
-    Recmodel = Recmodel.to(device)
-    '''
-
-
-if args.generate_perturb_adj:
-    net = csc_matrix(net)
-    train_pos, train_neg, test_pos, test_neg = sample_neg(
-        net, args.test_ratio, max_train_num=args.max_train_num
-    )
-
-    A = net.copy()  # the observed network
-    A[test_pos[0], test_pos[1]] = 0  # mask test links
-    A[test_pos[1], test_pos[0]] = 0  # mask test links
-    A.eliminate_zeros()  # make sure the links are masked when using the sparse matrix in scipy-1.3.x
-
-    node_information = None
-    model = utils.Fake_model()
-    nettack = Nettack(model=model, nnodes=adj.size(1), device=device)
-    # if args.use_embedding:
-    #     embeddings = generate_node2vec_embeddings(A, 128, True, train_neg)
-    #     node_information = embeddings
-    # for i, j in tqdm(zip(train_pos[0], train_pos[1])):
-    #     g, n_labels, n_features = subgraph_extraction_labeling(
-    #         (i, j), A, args.hop, args.max_nodes_per_hop, node_information
-    #     )
-    #     node_list_i = utils.node_list_generation(args, num_users, num_items, i, adj_shape)
-    #     node_list_j = utils.node_list_generation(args, num_users, num_items, j, adj_shape)
 #
-    #     node_i = [i] * len(node_list_i)
-    #     node_j = [j] * len(node_list_j)
+# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# np.random.seed(args.seed)
+# torch.manual_seed(args.seed)
+# if device != 'cpu':
+#     torch.cuda.manual_seed(args.seed)
 #
-    #     modified_adj = adj.clone().detach()
-    #     modified_adj[node_i, node_list_i] = modified_adj[node_i, node_list_i] * (-2) + 1
-    #     modified_adj[node_j, node_list_j] = modified_adj[node_j, node_2list_j] * (-2) + 1
-
-    # modified_adj_mask = nettack.get_adj_score_only(features=None, adj=adj, target_node, num_users=num_users,
-    #                                              n_perturbations=perturbations)
-
-    # modified_adj = modified_adj * modified_adj_mask
-
-    # train_graphs, test_graphs, max_n_label = links2subgraphs(
-    #     A,
-    #     train_pos,
-    #     train_neg,
-    #     test_pos,
-    #     test_neg,
-    #     args.hop,
-    #     args.max_nodes_per_hop,
-    #     node_information,
-    #     args.no_parallel
-    # )
-
-if args.random_perturb:
-    print("train model using random perturbation")
-    print("=================================================")
-    modified_adj = attack_randomly(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
-                                   args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
-    try:
-        print("modified adjacency is same as original adjacency: ", (modified_adj == adj).all())
-    except AttributeError:
-        print("adjacency is not modified. Check your perturbation and make sure 0 isn't assigned.")
-
-    Recmodel_ = lightgcn.LightGCN(device)
-    Recmodel_ = Recmodel_.to(device)
-    Recmodel_.fit(adj, users, posItems, negItems)
-    print("evaluate the model with modified adjacency matrix")
-    Procedure.Test(dataset, Recmodel_, 1, utils.normalize_adj_tensor(modified_adj), None, 0)
-    print("=================================================")
-
-if args.train_groc:
-    Recmodel = lightgcn.LightGCN(device)
-    Recmodel = Recmodel.to(device)
-    print("Train GROC loss")
-    print("=================================================")
-    if args.groc_rdm_adj_attack:
-        print("Mode: Random attack + PGD attack")
-        rdm_modified_adj_a = attack_randomly(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
-                                             args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
-        rdm_modified_adj_b = attack_randomly(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
-                                             args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
-        try:
-            print("2 random perturbed adj matrix ain't same: ", ~(rdm_modified_adj_a == rdm_modified_adj_b).all())
-        except AttributeError:
-            print("2 random perturbed adj matrix are same.")
-
-        print("{} edges are different in both random perturbed adj matrix.".
-              format((rdm_modified_adj_a != rdm_modified_adj_b).sum().detach().cpu().numpy()))
-
-        groc = GROC_loss(Recmodel, adj, args)
-        modified_adj_a, modified_adj_b = groc.attack_adjs(rdm_modified_adj_a, rdm_modified_adj_b, perturbations,
-                                                          users, posItems, negItems)
-        print("===========================")
-        print("Train model_a on modified_adj_a")
-        groc.bpr_with_dcl(data_len, modified_adj_a, modified_adj_b, users, posItems, negItems)
-
-        print("original model performance on original adjacency matrix:")
-        print("===========================")
-        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
-        print("===========================")
-
-        print("trn_model performance after GROC learning on modified adjacency matrix A:")
-        print("===========================")
-        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_a), None, 0)
-        print("===========================")
-
-        print("trn_model performance after GROC learning on modified adjacency matrix B:")
-        print("===========================")
-        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_b), None, 0)
-
-    if args.groc_embed_mask:
-        print("Mode: Embedding mask + gradient attack")
-        groc = GROC_loss(Recmodel, adj, args)
-        groc.groc_train()
-
-        print("original model performance on original adjacency matrix:")
-        print("===========================")
-        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
-        print("===========================")
-
-        print("ori model performance after GROC learning on modified adjacency matrix A:")
-        print("===========================")
-        modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
-                                      args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
-        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_a), None, 0)
-
-        print("save model")
-        torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) + '/data/LightGCN_after_GROC.pt')
-        print("===========================")
-
-    if args.groc_with_bpr:
-        print("Mode:GROC + BPR")
-        pgd_model = PGDAttack(model=Recmodel, nnodes=adj.size(1), device=device)
-        pgd_model = pgd_model.to(device)
-        Recmodel._is_sparse = True
-        groc = GROC_loss(Recmodel, adj, d_mtr, args, pgd_model)
-        groc.groc_train_with_bpr(data_len, users, posItems, negItems, perturbations)
-
-        print("save model")
-        torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) +
-                   '/data/LightGCN_after_GROC_{}.pt'.format(args.loss_weight_bpr))
-        print("===========================")
-
-        print("original model performance on original adjacency matrix:")
-        print("===========================")
-        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
-        print("===========================")
-
-        print("ori model performance after GROC learning on modified adjacency matrix A:")
-        print("===========================")
-        modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
-                                      args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
-        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_a), None, 0)
-
-    if args.gcl_with_bpr:
-
-        def __dropout_x(x, keep_prob):
-            size = x.coalesce().size()
-            index = x.coalesce().indices().t()
-            values = x.coalesce().values()
-            random_index = torch.rand(len(values)) + keep_prob
-            random_index = random_index.int().bool()
-            index = index[random_index]
-            values = values[random_index] / keep_prob
-            g = torch.sparse.FloatTensor(index.t(), values, size)
-            return g
-
-        Graph = dataset.getSparseGraph()
-        Graph = utils.to_tensor(Graph, device=device)
-        Graph1 = __dropout_x(Graph, 0.8).to(device)
-        Graph2 = __dropout_x(Graph, 0.8).to(device)
-
-        print("Mode:GCL + BPR")
-        groc = GROC_loss(Recmodel, adj, d_mtr, args)
-        groc.ori_gcl_train_with_bpr(Graph1, Graph2, data_len, users, posItems, negItems)
-
-        print("original model performance on original adjacency matrix:")
-        print("===========================")
-        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
-        print("===========================")
-
-        print("ori model performance after GROC learning on modified adjacency matrix A:")
-        print("===========================")
-        modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
-                                      args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
-        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_a), None, 0)
-
-        print("save model")
-        torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) + '/data/LightGCN_after_GCL_BPR.pt')
-        print("===========================")
-
-    if args.groc_with_bpr_cat:
-        print("Mode:GROC + BPR CAT")
-        groc = GROC_loss(Recmodel, adj, d_mtr, args)
-        groc.groc_train_with_bpr_cat(data_len, users, posItems, negItems)
-
-        print("save model")
-        torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) +
-                   '/data/LightGCN_after_GROC_{}.pt'.format(args.loss_weight_bpr))
-        print("===========================")
-
-        print("original model performance on original adjacency matrix:")
-        print("===========================")
-        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
-        print("===========================")
-
-        print("ori model performance after GROC learning on modified adjacency matrix A:")
-        print("===========================")
-        modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
-                                      args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
-        Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_a), None, 0)
-    print("=================================================")
-    print("=================================================")
-
-if args.pgd_attack:
-    print("train model with pgd attack")
-    print("=================================================")
-    # Setup Attack Model
-    modified_adj = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
-                                args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
-    Recmodel_ = lightgcn.LightGCN(device)
-    Recmodel_ = Recmodel_.to(device)
-    Recmodel_.fit(adj, users, posItems, negItems)
-
-    try:
-        print("modified adjacency is same as original adjacency: ", (modified_adj == adj).all())
-    except AttributeError:
-        print("adjacency is not modified. Check your perturbation and make sure 0 isn't assigned.")
-
-    print("evaluate the model with modified adjacency matrix")
-    Procedure.Test(dataset, Recmodel_, 1, utils.normalize_adj_tensor(modified_adj), None, 0)
-    print("=================================================")
-
-if args.embedding_attack:
-    print("train model with embedding adversarial attack")
-    print("=================================================")
-    fit_model = lightgcn.LightGCN(device)
-    modified_model = attack_embedding(fit_model, adj, args.eps[args.modified_models_id],
-                                      args.path_modified_models, args.modified_models_name, args.modified_models_id,
-                                      users, posItems, negItems, num_users, device)
-
-    fit_model = fit_model.to(device)
-    fit_model.fit(adj, users, posItems, negItems)
-
-    print("evaluate the ATTACKED model with original adjacency matrix")
-    Procedure.Test(dataset, fit_model, 1, utils.normalize_adj_tensor(adj), None, 0)
-    print("=================================================")
+# net = dataset.getSparseGraph()
+# net = csc_matrix(net)
+#
+# adj = torch.FloatTensor(net.todense()).to(device)
+# rowsum = adj.sum(1)
+# r_inv = rowsum.pow(-1 / 2).flatten()
+# r_inv[torch.isinf(r_inv)] = 0.
+# d_mtr = torch.diag(r_inv).to_sparse().to(device)
+#
+# perturbations = int(args.ptb_rate * (adj.sum() // args.perturb_strength_list[args.modified_adj_id]))
+# # perturbations = int(args.ptb_rate * ((dataset.trainDataSize+dataset.testDataSize)//2))
+#
+# # adj = torch.FloatTensor(adj).to(device)
+#
+# users, posItems, negItems = utils.getTrainSet(dataset)
+# # users = users[:30]
+# # posItems = posItems[:30]
+# # negItems = negItems[:30]
+# data_len = len(users)
+#
+# # Setup and fit origin Model
+#
+# Recmodel = lightgcn.LightGCN(device)
+# Recmodel = Recmodel.to(device)
+# # Recmodel.fit(adj, users, posItems, negItems)
+#
+# num_users = Recmodel.num_users
+# num_items = Recmodel.num_items
+# adj_shape = num_users + num_items
+#
+# if args.model_ngcf:
+#     print("train model NGCF")
+#     print("=================================================")
+#
+#     pgd_model = PGDAttack(model=Recmodel, nnodes=adj.size(1), device=device)
+#     pgd_model = pgd_model.to(device)
+#
+#     Recmodel = ngcf_ori.NGCF(num_users, num_items, device)
+#     Recmodel = Recmodel.to(device)
+#
+#     groc = GROC_loss(Recmodel, adj, d_mtr, args, pgd_model)
+#     groc.groc_train_with_bpr(data_len, users, posItems, negItems, perturbations)
+#
+#     print("save model")
+#     torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) +
+#                '/data/NGCF_after_GROC_{}.pt'.format(args.loss_weight_bpr))
+#
+#     print("===========================")
+#
+#     print("original model performance on original adjacency matrix:")
+#     print("===========================")
+#     Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
+#     print("===========================")
+#
+#     print("ori model performance after GROC learning on modified adjacency matrix A:")
+#     print("===========================")
+#     modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
+#                                   args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+#     Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_a), None, 0)
+#
+#     '''
+#     # data_prepocessing
+#     user_fe = torch.load('C:/tmp/user_feature_tensor.pt')
+#     item_fe = torch.load('C:/tmp/item_feature_tensor.pt')
+#     num_users = user_fe.size()[0]
+#     num_items = item_fe.size()[0]
+#
+#     if user_fe.size()[1] > item_fe.size()[1]:
+#         target = torch.zeros(item_fe.size()[0], user_fe.size()[1])
+#         target[:, :item_fe.size()[1]] = item_fe
+#         feature_dim = user_fe.size()[1]
+#
+#         feature = torch.cat((user_fe, target), 1)
+#     else:
+#         target = torch.zeros(user_fe.size()[0], item_fe.size()[1])
+#         target[:, :user_fe.size()[1]] = user_fe
+#         feature_dim = item_fe.size()[1]
+#
+#         feature = torch.cat((target, item_fe), 1)
+#
+#     Recmodel = ngcf_ori.NGCF(num_users, num_items, feature_dim, device)
+#     Recmodel = Recmodel.to(device)
+#     '''
+#
+#
+# if args.generate_perturb_adj:
+#     net = csc_matrix(net)
+#     train_pos, train_neg, test_pos, test_neg = sample_neg(
+#         net, args.test_ratio, max_train_num=args.max_train_num
+#     )
+#
+#     A = net.copy()  # the observed network
+#     A[test_pos[0], test_pos[1]] = 0  # mask test links
+#     A[test_pos[1], test_pos[0]] = 0  # mask test links
+#     A.eliminate_zeros()  # make sure the links are masked when using the sparse matrix in scipy-1.3.x
+#
+#     node_information = None
+#     model = utils.Fake_model()
+#     nettack = Nettack(model=model, nnodes=adj.size(1), device=device)
+#     # if args.use_embedding:
+#     #     embeddings = generate_node2vec_embeddings(A, 128, True, train_neg)
+#     #     node_information = embeddings
+#     # for i, j in tqdm(zip(train_pos[0], train_pos[1])):
+#     #     g, n_labels, n_features = subgraph_extraction_labeling(
+#     #         (i, j), A, args.hop, args.max_nodes_per_hop, node_information
+#     #     )
+#     #     node_list_i = utils.node_list_generation(args, num_users, num_items, i, adj_shape)
+#     #     node_list_j = utils.node_list_generation(args, num_users, num_items, j, adj_shape)
+# #
+#     #     node_i = [i] * len(node_list_i)
+#     #     node_j = [j] * len(node_list_j)
+# #
+#     #     modified_adj = adj.clone().detach()
+#     #     modified_adj[node_i, node_list_i] = modified_adj[node_i, node_list_i] * (-2) + 1
+#     #     modified_adj[node_j, node_list_j] = modified_adj[node_j, node_2list_j] * (-2) + 1
+#
+#     # modified_adj_mask = nettack.get_adj_score_only(features=None, adj=adj, target_node, num_users=num_users,
+#     #                                              n_perturbations=perturbations)
+#
+#     # modified_adj = modified_adj * modified_adj_mask
+#
+#     # train_graphs, test_graphs, max_n_label = links2subgraphs(
+#     #     A,
+#     #     train_pos,
+#     #     train_neg,
+#     #     test_pos,
+#     #     test_neg,
+#     #     args.hop,
+#     #     args.max_nodes_per_hop,
+#     #     node_information,
+#     #     args.no_parallel
+#     # )
+#
+# if args.random_perturb:
+#     print("train model using random perturbation")
+#     print("=================================================")
+#     modified_adj = attack_randomly(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
+#                                    args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+#     try:
+#         print("modified adjacency is same as original adjacency: ", (modified_adj == adj).all())
+#     except AttributeError:
+#         print("adjacency is not modified. Check your perturbation and make sure 0 isn't assigned.")
+#
+#     Recmodel_ = lightgcn.LightGCN(device)
+#     Recmodel_ = Recmodel_.to(device)
+#     Recmodel_.fit(adj, users, posItems, negItems)
+#     print("evaluate the model with modified adjacency matrix")
+#     Procedure.Test(dataset, Recmodel_, 1, utils.normalize_adj_tensor(modified_adj), None, 0)
+#     print("=================================================")
+#
+# if args.train_groc:
+#     Recmodel = lightgcn.LightGCN(device)
+#     Recmodel = Recmodel.to(device)
+#     print("Train GROC loss")
+#     print("=================================================")
+#     if args.groc_rdm_adj_attack:
+#         print("Mode: Random attack + PGD attack")
+#         rdm_modified_adj_a = attack_randomly(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
+#                                              args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+#         rdm_modified_adj_b = attack_randomly(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
+#                                              args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+#         try:
+#             print("2 random perturbed adj matrix ain't same: ", ~(rdm_modified_adj_a == rdm_modified_adj_b).all())
+#         except AttributeError:
+#             print("2 random perturbed adj matrix are same.")
+#
+#         print("{} edges are different in both random perturbed adj matrix.".
+#               format((rdm_modified_adj_a != rdm_modified_adj_b).sum().detach().cpu().numpy()))
+#
+#         groc = GROC_loss(Recmodel, adj, args)
+#         modified_adj_a, modified_adj_b = groc.attack_adjs(rdm_modified_adj_a, rdm_modified_adj_b, perturbations,
+#                                                           users, posItems, negItems)
+#         print("===========================")
+#         print("Train model_a on modified_adj_a")
+#         groc.bpr_with_dcl(data_len, modified_adj_a, modified_adj_b, users, posItems, negItems)
+#
+#         print("original model performance on original adjacency matrix:")
+#         print("===========================")
+#         Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
+#         print("===========================")
+#
+#         print("trn_model performance after GROC learning on modified adjacency matrix A:")
+#         print("===========================")
+#         Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_a), None, 0)
+#         print("===========================")
+#
+#         print("trn_model performance after GROC learning on modified adjacency matrix B:")
+#         print("===========================")
+#         Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_b), None, 0)
+#
+#     if args.groc_embed_mask:
+#         print("Mode: Embedding mask + gradient attack")
+#         groc = GROC_loss(Recmodel, adj, args)
+#         groc.groc_train()
+#
+#         print("original model performance on original adjacency matrix:")
+#         print("===========================")
+#         Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
+#         print("===========================")
+#
+#         print("ori model performance after GROC learning on modified adjacency matrix A:")
+#         print("===========================")
+#         modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
+#                                       args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+#         Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_a), None, 0)
+#
+#         print("save model")
+#         torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) + '/data/LightGCN_after_GROC.pt')
+#         print("===========================")
+#
+#     if args.groc_with_bpr:
+#         print("Mode:GROC + BPR")
+#         pgd_model = PGDAttack(model=Recmodel, nnodes=adj.size(1), device=device)
+#         pgd_model = pgd_model.to(device)
+#         Recmodel._is_sparse = True
+#         groc = GROC_loss(Recmodel, adj, d_mtr, args, pgd_model)
+#         groc.groc_train_with_bpr(data_len, users, posItems, negItems, perturbations)
+#
+#         print("save model")
+#         torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) +
+#                    '/data/LightGCN_after_GROC_{}.pt'.format(args.loss_weight_bpr))
+#         print("===========================")
+#
+#         print("original model performance on original adjacency matrix:")
+#         print("===========================")
+#         Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
+#         print("===========================")
+#
+#         print("ori model performance after GROC learning on modified adjacency matrix A:")
+#         print("===========================")
+#         modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
+#                                       args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+#         Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_a), None, 0)
+#
+#     if args.gcl_with_bpr:
+#
+#         def __dropout_x(x, keep_prob):
+#             size = x.coalesce().size()
+#             index = x.coalesce().indices().t()
+#             values = x.coalesce().values()
+#             random_index = torch.rand(len(values)) + keep_prob
+#             random_index = random_index.int().bool()
+#             index = index[random_index]
+#             values = values[random_index] / keep_prob
+#             g = torch.sparse.FloatTensor(index.t(), values, size)
+#             return g
+#
+#         Graph = dataset.getSparseGraph()
+#         Graph = utils.to_tensor(Graph, device=device)
+#         Graph1 = __dropout_x(Graph, 0.8).to(device)
+#         Graph2 = __dropout_x(Graph, 0.8).to(device)
+#
+#         print("Mode:GCL + BPR")
+#         groc = GROC_loss(Recmodel, adj, d_mtr, args)
+#         groc.ori_gcl_train_with_bpr(Graph1, Graph2, data_len, users, posItems, negItems)
+#
+#         print("original model performance on original adjacency matrix:")
+#         print("===========================")
+#         Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
+#         print("===========================")
+#
+#         print("ori model performance after GROC learning on modified adjacency matrix A:")
+#         print("===========================")
+#         modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
+#                                       args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+#         Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_a), None, 0)
+#
+#         print("save model")
+#         torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) + '/data/LightGCN_after_GCL_BPR.pt')
+#         print("===========================")
+#
+#     if args.groc_with_bpr_cat:
+#         print("Mode:GROC + BPR CAT")
+#         groc = GROC_loss(Recmodel, adj, d_mtr, args)
+#         groc.groc_train_with_bpr_cat(data_len, users, posItems, negItems)
+#
+#         print("save model")
+#         torch.save(Recmodel.state_dict(), os.path.abspath(os.path.dirname(os.getcwd())) +
+#                    '/data/LightGCN_after_GROC_{}.pt'.format(args.loss_weight_bpr))
+#         print("===========================")
+#
+#         print("original model performance on original adjacency matrix:")
+#         print("===========================")
+#         Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(adj), None, 0)
+#         print("===========================")
+#
+#         print("ori model performance after GROC learning on modified adjacency matrix A:")
+#         print("===========================")
+#         modified_adj_a = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
+#                                       args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+#         Procedure.Test(dataset, Recmodel, 100, utils.normalize_adj_tensor(modified_adj_a), None, 0)
+#     print("=================================================")
+#     print("=================================================")
+#
+# if args.pgd_attack:
+#     print("train model with pgd attack")
+#     print("=================================================")
+#     # Setup Attack Model
+#     modified_adj = attack_model(Recmodel, adj, perturbations, args.path_modified_adj, args.modified_adj_name,
+#                                 args.modified_adj_id, users, posItems, negItems, Recmodel.num_users, device)
+#     Recmodel_ = lightgcn.LightGCN(device)
+#     Recmodel_ = Recmodel_.to(device)
+#     Recmodel_.fit(adj, users, posItems, negItems)
+#
+#     try:
+#         print("modified adjacency is same as original adjacency: ", (modified_adj == adj).all())
+#     except AttributeError:
+#         print("adjacency is not modified. Check your perturbation and make sure 0 isn't assigned.")
+#
+#     print("evaluate the model with modified adjacency matrix")
+#     Procedure.Test(dataset, Recmodel_, 1, utils.normalize_adj_tensor(modified_adj), None, 0)
+#     print("=================================================")
+#
+# if args.embedding_attack:
+#     print("train model with embedding adversarial attack")
+#     print("=================================================")
+#     fit_model = lightgcn.LightGCN(device)
+#     modified_model = attack_embedding(fit_model, adj, args.eps[args.modified_models_id],
+#                                       args.path_modified_models, args.modified_models_name, args.modified_models_id,
+#                                       users, posItems, negItems, num_users, device)
+#
+#     fit_model = fit_model.to(device)
+#     fit_model.fit(adj, users, posItems, negItems)
+#
+#     print("evaluate the ATTACKED model with original adjacency matrix")
+#     Procedure.Test(dataset, fit_model, 1, utils.normalize_adj_tensor(adj), None, 0)
+#     print("=================================================")
