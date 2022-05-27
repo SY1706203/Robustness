@@ -64,5 +64,6 @@ def parse_args():
     parser.add_argument('--groc_with_bpr_cat', type=bool, default=False, help='train a pre-trained GCN on GROC loss')
     parser.add_argument('--use_IntegratedGradient', type=bool, default=False, help='train a pre-trained GCN on GROC loss')
     parser.add_argument('--use_groc_pgd', type=bool, default=False, help='train a pre-trained GCN on GROC loss')
+    parser.add_argument('--model_ngcf', type=bool, default=False, help='train a pre-trained GCN on GROC loss')
 
     return parser.parse_args()
