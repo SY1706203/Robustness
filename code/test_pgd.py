@@ -1,4 +1,3 @@
-print("1")
 import torch
 import numpy as np
 import argparse
@@ -77,7 +76,7 @@ parser.add_argument('--no_parallel',                     type=bool,   default=Tr
 parser.add_argument('--max_nodes_per_hop',                 type=int,   default=20,                                                                                                                                                   help='mask embedding of users/items of GCN')
 parser.add_argument('--node_percentage_list',                 type=list,   default=[0.25, 0.5, 0.75, 1],                                                                                                                                                   help='mask embedding of users/items of GCN')
 parser.add_argument('--node_percentage_list_index',         type=int,   default=0,                                                                                                                                                   help='mask embedding of users/items of GCN')
-parser.add_argument('--model_ngcf',                         type=bool,   default=True,                                                                                                                                                   help='mask embedding of users/items of GCN')
+parser.add_argument('--model_ngcf',                         type=bool,   default=False,                                                                                                                                                   help='mask embedding of users/items of GCN')
 
 args = parser.parse_args()
 
