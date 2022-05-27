@@ -1,89 +1,89 @@
 import torch
 import numpy as np
 import argparse
-import os
-import random
-import lightgcn
-import ngcf_ori
-from register import dataset
-from tqdm import tqdm
-from topology_attack import PGDAttack
-import utils
-from utils_attack import attack_model, attack_randomly, attack_embedding
-import Procedure
-from scipy.sparse import csc_matrix
-from groc_loss import GROC_loss
-from adj_generation_LP import links2subgraphs, sample_neg, generate_node2vec_embeddings, subgraph_extraction_labeling
-from adj_constraint import Nettack
-
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--seed',                           type=int,   default=15,                                                                                                                                                  help='Random seed.')
-parser.add_argument('--warmup_steps',                   type=int,   default=10000,                                                                                                                                               help='Warm up steps for scheduler.')
-parser.add_argument('--batch_size',                     type=int,   default=2048,                                                                                                                                                help='BS.')
-parser.add_argument('--groc_batch_size',                type=int,   default=10,                                                                                                                                                help='BS.')
-parser.add_argument('--groc_epochs',                    type=int,   default=100,                                                                                                                                                 help='Number of epochs to train.')
-parser.add_argument('--lr',                             type=float, default=0.001,                                                                                                                                                help='Initial learning rate.')
-parser.add_argument('--weight_decay',                   type=float, default=5e-4,                                                                                                                                                help='Weight decay (L2 loss on parameters).')
-parser.add_argument('--hidden',                         type=int,   default=16,                                                                                                                                                  help='Number of hidden units.')
-parser.add_argument('--dropout',                        type=float, default=0.5,                                                                                                                                                 help='Dropout rate (1-keep probability).')
-parser.add_argument('--train_groc',                     type=bool,  default=False,                                                                                                                                               help='control if train the groc')
-parser.add_argument('--pgd_attack',                     type=bool,  default=False,                                                                                                                                               help='PGD attack and evaluate')
-parser.add_argument('--embedding_attack',               type=bool,  default=False,                                                                                                                                               help='PGD attack and evaluate')
-parser.add_argument('--random_perturb',                 type=bool,  default=False,                                                                                                                                               help='perturb adj randomly and compare to PGD')
-parser.add_argument('--groc_with_bpr',                  type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
-parser.add_argument('--groc_rdm_adj_attack',            type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
-parser.add_argument('--groc_embed_mask',                type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
-parser.add_argument('--gcl_with_bpr',                   type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
-parser.add_argument('--use_scheduler',                  type=bool,  default=False,                                                                                                                                               help='Use scheduler for learning rate decay')
-parser.add_argument('--use_IntegratedGradient',         type=bool,  default=False,                                                                                                                                                help='Use scheduler for learning rate decay')
-parser.add_argument('--groc_with_bpr_cat',              type=bool,  default=False,                                                                                                                                                help='Use scheduler for learning rate decay')
-parser.add_argument('--use_groc_pgd',                   type=bool,  default=False,                                                                                                                                                help='Use scheduler for learning rate decay')
-parser.add_argument('--loss_weight_bpr',                type=float, default=0.9,                                                                                                                                                 help='train loss with learnable weight between 2 losses')
-parser.add_argument('--dataset',                        type=str,   default='citeseer',                                                                                                             choices=['MOOC'],            help='dataset')
-parser.add_argument('--T_groc',                         type=float, default=0.7,                                                                                                                                                 help='param temperature for GROC')
-parser.add_argument('--ptb_rate',                       type=float, default=0.5,                                                                                                                                                 help='perturbation rate')
-parser.add_argument('--model',                          type=str,   default='PGD',                                                                                                                  choices=['PGD', 'min-max'],  help='model variant')
-parser.add_argument('--embed_attack_method',            type=str,   default='Gradient',                                                                                                             choices=['Gradient', 'rdm'], help='model variant')
-parser.add_argument('--path_modified_adj',              type=str,   default=os.path.abspath(os.path.dirname(os.getcwd())) + '/data/modified_adj_{}.pt',                                                                          help='path where modified adj matrix are saved')
-parser.add_argument('--modified_adj_name',              type=list,  default=['a_02', 'a_04', 'a_06', 'a_08', 'a_1', 'a_12', 'a_14', 'a_16', 'a_18', 'a_2'],                                                                      help='we attack adj twice for GROC training so we will have 2 modified adj matrix. In order to distinguish them we set a flag to save them independently')
-parser.add_argument('--modified_adj_name_with_rdm_ptb_a', type=list,  default=['a_02_w_r', 'a_04_w_r', 'a_06_w_r', 'a_08_w_r', 'a_1_w_r', 'a_12_w_r', 'a_14_w_r', 'a_16_w_r', 'a_18_w_r', 'a_2_w_r'],                              help='we attack adj twice for GROC training, 1st random 2nd PGD.')
-parser.add_argument('--modified_adj_name_with_rdm_ptb_b', type=list,  default=['a_02_w_r_b', 'a_04_w_r_b', 'a_06_w_r_b', 'a_08_w_r_b', 'a_1_w_r_b', 'a_12_w_r_b', 'a_14_w_r_b', 'a_16_w_r_b', 'a_18_w_r_b', 'a_2_w_r_b'],                             help='we attack adj twice for GROC training, 1st random 2nd PGD.')
-parser.add_argument('--modified_adj_name_with_masked_M_a', type=list,  default=['a_02_mM_a', 'a_04_mM_a', 'a_06_mM_a', 'a_08_mM_a', 'a_1_mM_a', 'a_12_mM_a', 'a_14_mM_a', 'a_16_mM_a', 'a_18_mM_a', 'a_2_mM_a'],                              help='masked_M indicates masked model(embedding mask)')
-parser.add_argument('--modified_adj_name_with_masked_M_b', type=list,  default=['a_02_mM_b', 'a_04_mM_b', 'a_06_mM_b', 'a_08_mM_b', 'a_1_mM_b', 'a_12_mM_b', 'a_14_mM_b', 'a_16_mM_b', 'a_18_mM_b', 'a_2_mM_b'],                             help='masked_M indicates masked model(embedding mask)')
-parser.add_argument('--mask_prob_list',              type=list,  default=[0.1, 0.2, 0.3, 0.4],                              help='we attack adj twice for GROC training, 1st random 2nd PGD.')
-parser.add_argument('--mask_prob_idx',              type=int,  default=1,                              help='we attack adj twice for GROC training, 1st random 2nd PGD.')
-parser.add_argument('--perturb_strength_list',          type=list,  default=[10, 5, 3.33, 2.5, 2, 1.67, 1.42, 1.25, 1.11, 1],                                                                                                    help='2 perturb strength for 2 PGD attacks')
-parser.add_argument('--modified_adj_id',                type=int,   default=0,                                                                                                                                                   help='select adj matrix from modified adj matrix ids')
-parser.add_argument('--masked_model_a_id',                type=int,   default=2,                                                                                                                                                   help='select adj matrix from modified adj matrix ids')
-parser.add_argument('--masked_model_b_id',                type=int,   default=1,                                                                                                                                                   help='select adj matrix from modified adj matrix ids')
-parser.add_argument('--path_modified_models',           type=str,   default=os.path.abspath(os.path.dirname(os.getcwd())) + '/data/modified_model_{}.pt',                                                                        help='path where modified model is saved')
-parser.add_argument('--modified_models_name',           type=list,  default=['02', '04', '06', '08', '1', '12', '14', '16', '18', '2'],                                                                                          help='list of flags for modified models')
-parser.add_argument('--eps',                            type=list,  default=[0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2],                                                                                                      help='attack restriction eps for embedding attack')
-parser.add_argument('--modified_models_id',             type=int,   default=0,                                                                                                                                                   help='select model matrix from modified model matrix ids')
-parser.add_argument('--mask_prob_1',                    type=float,   default=0.3,                                                                                                                                                   help='mask embedding of users/items of GCN')
-parser.add_argument('--mask_prob_2',                    type=float,   default=0.4,                                                                                                                                                   help='mask embedding of users/items of GCN')
-parser.add_argument('--insert_prob_1',                    type=float,   default=0.004,                                                                                                                                                   help='mask embedding of users/items of GCN')
-parser.add_argument('--insert_prob_2',                    type=float,   default=0.004,                                                                                                                                                   help='mask embedding of users/items of GCN')
-parser.add_argument('--remove_prob_1',                    type=float,   default=0.2,                                                                                                                                                   help='mask embedding of users/items of GCN')
-parser.add_argument('--remove_prob_2',                    type=float,   default=0.4,                                                                                                                                                   help='mask embedding of users/items of GCN')
-parser.add_argument('--generate_perturb_adj',         type=bool,   default=True,                                                                                                                                                   help='mask embedding of users/items of GCN')
-parser.add_argument('--test_ratio',                   type=float,   default=0.2,                                                                                                                                                   help='mask embedding of users/items of GCN')
-parser.add_argument('--max_train_num',                   type=int,   default=200,                                                                                                                                                   help='mask embedding of users/items of GCN')
-parser.add_argument('--use_embedding',                   type=bool,   default=False,                                                                                                                                                   help='mask embedding of users/items of GCN')
-parser.add_argument('--hop',                           type=int,   default=1,                                                                                                                                                   help='mask embedding of users/items of GCN')
-parser.add_argument('--no_parallel',                     type=bool,   default=True,                                                                                                                                                   help='mask embedding of users/items of GCN')
-parser.add_argument('--max_nodes_per_hop',                 type=int,   default=20,                                                                                                                                                   help='mask embedding of users/items of GCN')
-parser.add_argument('--node_percentage_list',                 type=list,   default=[0.25, 0.5, 0.75, 1],                                                                                                                                                   help='mask embedding of users/items of GCN')
-parser.add_argument('--node_percentage_list_index',         type=int,   default=0,                                                                                                                                                   help='mask embedding of users/items of GCN')
-parser.add_argument('--model_ngcf',                         type=bool,   default=False,                                                                                                                                                   help='mask embedding of users/items of GCN')
-
-args = parser.parse_args()
-
-print("=================================================")
-print("All parameters in args")
-print(args)
-print("=================================================")
+# import os
+# import random
+# import lightgcn
+# import ngcf_ori
+# from register import dataset
+# from tqdm import tqdm
+# from topology_attack import PGDAttack
+# import utils
+# from utils_attack import attack_model, attack_randomly, attack_embedding
+# import Procedure
+# from scipy.sparse import csc_matrix
+# from groc_loss import GROC_loss
+# from adj_generation_LP import links2subgraphs, sample_neg, generate_node2vec_embeddings, subgraph_extraction_labeling
+# from adj_constraint import Nettack
+#
+#
+# parser = argparse.ArgumentParser()
+# parser.add_argument('--seed',                           type=int,   default=15,                                                                                                                                                  help='Random seed.')
+# parser.add_argument('--warmup_steps',                   type=int,   default=10000,                                                                                                                                               help='Warm up steps for scheduler.')
+# parser.add_argument('--batch_size',                     type=int,   default=2048,                                                                                                                                                help='BS.')
+# parser.add_argument('--groc_batch_size',                type=int,   default=10,                                                                                                                                                help='BS.')
+# parser.add_argument('--groc_epochs',                    type=int,   default=100,                                                                                                                                                 help='Number of epochs to train.')
+# parser.add_argument('--lr',                             type=float, default=0.001,                                                                                                                                                help='Initial learning rate.')
+# parser.add_argument('--weight_decay',                   type=float, default=5e-4,                                                                                                                                                help='Weight decay (L2 loss on parameters).')
+# parser.add_argument('--hidden',                         type=int,   default=16,                                                                                                                                                  help='Number of hidden units.')
+# parser.add_argument('--dropout',                        type=float, default=0.5,                                                                                                                                                 help='Dropout rate (1-keep probability).')
+# parser.add_argument('--train_groc',                     type=bool,  default=False,                                                                                                                                               help='control if train the groc')
+# parser.add_argument('--pgd_attack',                     type=bool,  default=False,                                                                                                                                               help='PGD attack and evaluate')
+# parser.add_argument('--embedding_attack',               type=bool,  default=False,                                                                                                                                               help='PGD attack and evaluate')
+# parser.add_argument('--random_perturb',                 type=bool,  default=False,                                                                                                                                               help='perturb adj randomly and compare to PGD')
+# parser.add_argument('--groc_with_bpr',                  type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
+# parser.add_argument('--groc_rdm_adj_attack',            type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
+# parser.add_argument('--groc_embed_mask',                type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
+# parser.add_argument('--gcl_with_bpr',                   type=bool,  default=False,                                                                                                                                               help='train a pre-trained GCN on GROC loss')
+# parser.add_argument('--use_scheduler',                  type=bool,  default=False,                                                                                                                                               help='Use scheduler for learning rate decay')
+# parser.add_argument('--use_IntegratedGradient',         type=bool,  default=False,                                                                                                                                                help='Use scheduler for learning rate decay')
+# parser.add_argument('--groc_with_bpr_cat',              type=bool,  default=False,                                                                                                                                                help='Use scheduler for learning rate decay')
+# parser.add_argument('--use_groc_pgd',                   type=bool,  default=False,                                                                                                                                                help='Use scheduler for learning rate decay')
+# parser.add_argument('--loss_weight_bpr',                type=float, default=0.9,                                                                                                                                                 help='train loss with learnable weight between 2 losses')
+# parser.add_argument('--dataset',                        type=str,   default='citeseer',                                                                                                             choices=['MOOC'],            help='dataset')
+# parser.add_argument('--T_groc',                         type=float, default=0.7,                                                                                                                                                 help='param temperature for GROC')
+# parser.add_argument('--ptb_rate',                       type=float, default=0.5,                                                                                                                                                 help='perturbation rate')
+# parser.add_argument('--model',                          type=str,   default='PGD',                                                                                                                  choices=['PGD', 'min-max'],  help='model variant')
+# parser.add_argument('--embed_attack_method',            type=str,   default='Gradient',                                                                                                             choices=['Gradient', 'rdm'], help='model variant')
+# parser.add_argument('--path_modified_adj',              type=str,   default=os.path.abspath(os.path.dirname(os.getcwd())) + '/data/modified_adj_{}.pt',                                                                          help='path where modified adj matrix are saved')
+# parser.add_argument('--modified_adj_name',              type=list,  default=['a_02', 'a_04', 'a_06', 'a_08', 'a_1', 'a_12', 'a_14', 'a_16', 'a_18', 'a_2'],                                                                      help='we attack adj twice for GROC training so we will have 2 modified adj matrix. In order to distinguish them we set a flag to save them independently')
+# parser.add_argument('--modified_adj_name_with_rdm_ptb_a', type=list,  default=['a_02_w_r', 'a_04_w_r', 'a_06_w_r', 'a_08_w_r', 'a_1_w_r', 'a_12_w_r', 'a_14_w_r', 'a_16_w_r', 'a_18_w_r', 'a_2_w_r'],                              help='we attack adj twice for GROC training, 1st random 2nd PGD.')
+# parser.add_argument('--modified_adj_name_with_rdm_ptb_b', type=list,  default=['a_02_w_r_b', 'a_04_w_r_b', 'a_06_w_r_b', 'a_08_w_r_b', 'a_1_w_r_b', 'a_12_w_r_b', 'a_14_w_r_b', 'a_16_w_r_b', 'a_18_w_r_b', 'a_2_w_r_b'],                             help='we attack adj twice for GROC training, 1st random 2nd PGD.')
+# parser.add_argument('--modified_adj_name_with_masked_M_a', type=list,  default=['a_02_mM_a', 'a_04_mM_a', 'a_06_mM_a', 'a_08_mM_a', 'a_1_mM_a', 'a_12_mM_a', 'a_14_mM_a', 'a_16_mM_a', 'a_18_mM_a', 'a_2_mM_a'],                              help='masked_M indicates masked model(embedding mask)')
+# parser.add_argument('--modified_adj_name_with_masked_M_b', type=list,  default=['a_02_mM_b', 'a_04_mM_b', 'a_06_mM_b', 'a_08_mM_b', 'a_1_mM_b', 'a_12_mM_b', 'a_14_mM_b', 'a_16_mM_b', 'a_18_mM_b', 'a_2_mM_b'],                             help='masked_M indicates masked model(embedding mask)')
+# parser.add_argument('--mask_prob_list',              type=list,  default=[0.1, 0.2, 0.3, 0.4],                              help='we attack adj twice for GROC training, 1st random 2nd PGD.')
+# parser.add_argument('--mask_prob_idx',              type=int,  default=1,                              help='we attack adj twice for GROC training, 1st random 2nd PGD.')
+# parser.add_argument('--perturb_strength_list',          type=list,  default=[10, 5, 3.33, 2.5, 2, 1.67, 1.42, 1.25, 1.11, 1],                                                                                                    help='2 perturb strength for 2 PGD attacks')
+# parser.add_argument('--modified_adj_id',                type=int,   default=0,                                                                                                                                                   help='select adj matrix from modified adj matrix ids')
+# parser.add_argument('--masked_model_a_id',                type=int,   default=2,                                                                                                                                                   help='select adj matrix from modified adj matrix ids')
+# parser.add_argument('--masked_model_b_id',                type=int,   default=1,                                                                                                                                                   help='select adj matrix from modified adj matrix ids')
+# parser.add_argument('--path_modified_models',           type=str,   default=os.path.abspath(os.path.dirname(os.getcwd())) + '/data/modified_model_{}.pt',                                                                        help='path where modified model is saved')
+# parser.add_argument('--modified_models_name',           type=list,  default=['02', '04', '06', '08', '1', '12', '14', '16', '18', '2'],                                                                                          help='list of flags for modified models')
+# parser.add_argument('--eps',                            type=list,  default=[0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2],                                                                                                      help='attack restriction eps for embedding attack')
+# parser.add_argument('--modified_models_id',             type=int,   default=0,                                                                                                                                                   help='select model matrix from modified model matrix ids')
+# parser.add_argument('--mask_prob_1',                    type=float,   default=0.3,                                                                                                                                                   help='mask embedding of users/items of GCN')
+# parser.add_argument('--mask_prob_2',                    type=float,   default=0.4,                                                                                                                                                   help='mask embedding of users/items of GCN')
+# parser.add_argument('--insert_prob_1',                    type=float,   default=0.004,                                                                                                                                                   help='mask embedding of users/items of GCN')
+# parser.add_argument('--insert_prob_2',                    type=float,   default=0.004,                                                                                                                                                   help='mask embedding of users/items of GCN')
+# parser.add_argument('--remove_prob_1',                    type=float,   default=0.2,                                                                                                                                                   help='mask embedding of users/items of GCN')
+# parser.add_argument('--remove_prob_2',                    type=float,   default=0.4,                                                                                                                                                   help='mask embedding of users/items of GCN')
+# parser.add_argument('--generate_perturb_adj',         type=bool,   default=True,                                                                                                                                                   help='mask embedding of users/items of GCN')
+# parser.add_argument('--test_ratio',                   type=float,   default=0.2,                                                                                                                                                   help='mask embedding of users/items of GCN')
+# parser.add_argument('--max_train_num',                   type=int,   default=200,                                                                                                                                                   help='mask embedding of users/items of GCN')
+# parser.add_argument('--use_embedding',                   type=bool,   default=False,                                                                                                                                                   help='mask embedding of users/items of GCN')
+# parser.add_argument('--hop',                           type=int,   default=1,                                                                                                                                                   help='mask embedding of users/items of GCN')
+# parser.add_argument('--no_parallel',                     type=bool,   default=True,                                                                                                                                                   help='mask embedding of users/items of GCN')
+# parser.add_argument('--max_nodes_per_hop',                 type=int,   default=20,                                                                                                                                                   help='mask embedding of users/items of GCN')
+# parser.add_argument('--node_percentage_list',                 type=list,   default=[0.25, 0.5, 0.75, 1],                                                                                                                                                   help='mask embedding of users/items of GCN')
+# parser.add_argument('--node_percentage_list_index',         type=int,   default=0,                                                                                                                                                   help='mask embedding of users/items of GCN')
+# parser.add_argument('--model_ngcf',                         type=bool,   default=False,                                                                                                                                                   help='mask embedding of users/items of GCN')
+#
+# args = parser.parse_args()
+#
+# print("=================================================")
+# print("All parameters in args")
+# print(args)
+# print("=================================================")
 #
 # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # np.random.seed(args.seed)
@@ -418,3 +418,6 @@ print("=================================================")
 #     print("evaluate the ATTACKED model with original adjacency matrix")
 #     Procedure.Test(dataset, fit_model, 1, utils.normalize_adj_tensor(adj), None, 0)
 #     print("=================================================")
+
+
+print("1")
